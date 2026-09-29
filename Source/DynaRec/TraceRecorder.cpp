@@ -278,6 +278,11 @@ CTraceRecorder::EUpdateTraceStatus	CTraceRecorder::UpdateTrace( u32 address,
 
 //
 
+bool	CTraceRecorder::CanStopTrace() const
+{
+	return mTracing && !mTraceBuffer.empty() && mActiveBranchIdx == INVALID_IDX;
+}
+
 void	CTraceRecorder::StopTrace( u32 exit_address )
 {
 	#ifdef DAEDALUS_ENABLE_ASSERTS

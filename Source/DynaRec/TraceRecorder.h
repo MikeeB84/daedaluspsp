@@ -52,6 +52,11 @@ public:
 	void				AbortTrace();
 
 	bool				IsTraceActive() const						{ return mTracing; }
+
+	// True if the trace recorded so far can be turned into a fragment right now:
+	// at least one instruction, and not part way through a branch.
+	bool				CanStopTrace() const;
+	u32					GetTraceLength() const						{ return mTraceBuffer.size(); }
 #ifdef DAEDALUS_ENABLE_ASSERTS
 	u32					GetStartTraceAddress() const				{ DAEDALUS_ASSERT_Q( mTracing ); return mStartTraceAddress; }
 #else

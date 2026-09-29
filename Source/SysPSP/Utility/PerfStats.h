@@ -38,7 +38,8 @@ enum EPerfCategory
 enum EPerfCounter
 {
 	PERF_COUNT_TRACE_START = 0,		// Dynarec started recording a hot trace
-	PERF_COUNT_TRACE_ABORT,			// ...and had to throw it away (interrupt/exception)
+	PERF_COUNT_TRACE_ABORT,			// ...and had to throw it away (exception)
+	PERF_COUNT_TRACE_SALVAGED,		// ...was cut short by an interrupt but compiled what it had
 	PERF_COUNT_FRAGMENT,			// Fragments compiled
 
 	NUM_PERF_COUNTERS
@@ -61,6 +62,16 @@ inline void PerfStats_Count( EPerfCounter counter )
 
 // Events per second over the last sample
 u32		PerfStats_GetCount( EPerfCounter counter );
+
+// Dynarec trace events, collected per trace start address for dynarec.txt
+enum ETraceEvent
+{
+	TRACE_EVENT_START,
+	TRACE_EVENT_ABORT,
+	TRACE_EVENT_SALVAGED,
+	TRACE_EVENT_COMPILED,
+};
+void	PerfStats_TraceEvent( ETraceEvent event, u32 start_address, u32 pc, u32 stuff_to_do, u32 length );
 
 inline void PerfStats_Enter( EPerfCategory category )
 {

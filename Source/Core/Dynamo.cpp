@@ -394,17 +394,30 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 				gAbortedTraceReasons[ start_address ] = stuff_to_do;
 #endif
 
-#ifdef ALLOW_TRACES_WHICH_EXCEPT
-				if(stuff_to_do == CPU_CHECK_INTERRUPTS && gCPUState.Delay == NO_DELAY )		// Note checking for exactly equal, not just that it's set
+				// An interrupt arrived (or was raised by the last instruction) while recording.
+				// Keep what was recorded up to here: the fragment exits at the current PC, and
+				// compiled code already leaves a fragment when an instruction raises an interrupt.
+				// Throwing the trace away instead can leave hot code in the interpreter for good,
+				// e.g. a loop whose body always raises an interrupt.
+				// Exceptions (TLB misses, syscalls...) still abort, as the PC has been redirected.
+				const u32 trace_start = gTraceRecorder.GetStartTraceAddress();
+				const u32 trace_length = gTraceRecorder.GetTraceLength();
+
+				if( (stuff_to_do & ~CPU_CHANGE_CORE) == CPU_CHECK_INTERRUPTS &&
+					gCPUState.Delay == NO_DELAY &&
+					gTraceRecorder.CanStopTrace() )
 				{
-					//DBGConsole_Msg( 0, "Adding chunk at %08x after interrupt\n", gTraceRecorder.GetStartTraceAddress() );
+					PerfStats_Count( PERF_COUNT_TRACE_SALVAGED );
+					PerfStats_TraceEvent( TRACE_EVENT_SALVAGED, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
 					gTraceRecorder.StopTrace( gCPUState.CurrentPC );
 					CPU_CreateAndAddFragment();
 				}
-#endif
-
-				gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an interrupt etc
-				PerfStats_Count( PERF_COUNT_TRACE_ABORT );
+				else
+				{
+					PerfStats_Count( PERF_COUNT_TRACE_ABORT );
+					PerfStats_TraceEvent( TRACE_EVENT_ABORT, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
+					gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an exception etc
+				}
 			}
 			CPU_SelectCore();
 		}
@@ -511,6 +524,7 @@ void CPU_CreateAndAddFragment()
 	if( p_fragment != nullptr )
 	{
 		PerfStats_Count( PERF_COUNT_FRAGMENT );
+		PerfStats_TraceEvent( TRACE_EVENT_COMPILED, p_fragment->GetEntryAddress(), p_fragment->GetEntryAddress(), 0, 0 );
 		gHotTraceCountMap.Erase( p_fragment->GetEntryAddress() );
 		gFragmentCache.InsertFragment( p_fragment );
 
@@ -674,6 +688,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 							 ((trace_count - gHotTraceThreshold) % gHotTraceRetryInterval) == 0 )
 					{
 						PerfStats_Count( PERF_COUNT_TRACE_START );
+						PerfStats_TraceEvent( TRACE_EVENT_START, gCPUState.CurrentPC, gCPUState.CurrentPC, 0, 0 );
 						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.Size() );
 						gTraceRecorder.StartTrace( gCPUState.CurrentPC );
 
