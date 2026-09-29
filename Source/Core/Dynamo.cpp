@@ -18,6 +18,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include <algorithm>
+#include <array>
+#include <vector>
 #include <fstream>
 
 #include "Base/Types.h"
@@ -61,9 +63,145 @@ static const u32					gMaxHotTraceMapSize = (2048 + TRACE_SIZE);
 static const u32					gHotTraceThreshold = 10;	//How many times interpreter has to loop a trace before it becomes hot and sent to dynarec
 
 
-//std::map< u32, u32, std::less<u32>, MyAllocator >				gHotTraceCountMap;
-//std::map< u32, u32, std::less<u32>, boost::pool_allocator<std::pair< const u32, u32 > > >				gHotTraceCountMap;
-std::map< u32, u32 >				gHotTraceCountMap {};
+//*****************************************************************************
+// Counts how often the interpreter reaches each branch target. This is hit on
+// every interpreted branch without a fragment, so it uses a fixed open
+// addressing table instead of std::map (no allocation, no tree walk).
+// Behaviour matches the map it replaces: Increment/Erase/Clear/Size.
+//*****************************************************************************
+class CHotTraceCounter
+{
+public:
+	CHotTraceCounter()						{ Clear(); }
+
+	u32		Size() const					{ return mLive; }
+
+	void	Clear()
+	{
+		mSlots.fill( Slot{ kEmpty, 0 } );
+		mLive = 0;
+		mUsed = 0;
+	}
+
+	// Equivalent to ++map[address]
+	u32		Increment( u32 address )
+	{
+		u32 idx = Hash( address );
+		s32 tombstone = -1;
+		for (;;)
+		{
+			Slot & slot = mSlots[ idx ];
+			if( slot.Address == address )
+			{
+				return ++slot.Count;
+			}
+			if( slot.Address == kEmpty )
+			{
+				break;
+			}
+			if( slot.Address == kTombstone && tombstone < 0 )
+			{
+				tombstone = (s32)idx;
+			}
+			idx = (idx + 1) & (kNumSlots - 1);
+		}
+
+		if( tombstone >= 0 )
+		{
+			idx = (u32)tombstone;
+		}
+		else
+		{
+			++mUsed;
+		}
+		mSlots[ idx ] = Slot{ address, 1 };
+		++mLive;
+
+		if( mUsed > kMaxUsed )
+		{
+			Rehash();
+		}
+		return 1;
+	}
+
+	void	Erase( u32 address )
+	{
+		u32 idx = Hash( address );
+		for (;;)
+		{
+			Slot & slot = mSlots[ idx ];
+			if( slot.Address == address )
+			{
+				slot.Address = kTombstone;
+				slot.Count = 0;
+				--mLive;
+				return;
+			}
+			if( slot.Address == kEmpty )
+			{
+				return;
+			}
+			idx = (idx + 1) & (kNumSlots - 1);
+		}
+	}
+
+	template< typename Fn > void ForEach( Fn fn ) const
+	{
+		for( const Slot & slot : mSlots )
+		{
+			if( slot.Address != kEmpty && slot.Address != kTombstone )
+			{
+				fn( slot.Address, slot.Count );
+			}
+		}
+	}
+
+private:
+	struct Slot
+	{
+		u32		Address;
+		u32		Count;
+	};
+
+	// PCs are always 4 byte aligned, so these can never be real addresses
+	static const u32 kEmpty			= 0xFFFFFFFF;
+	static const u32 kTombstone		= 0xFFFFFFFE;
+	static const u32 kNumSlotBits	= 13;
+	static const u32 kNumSlots		= 1 << kNumSlotBits;	// 3x gMaxHotTraceMapSize keeps probes short
+	static const u32 kMaxUsed		= kNumSlots * 3 / 4;	// Live entries + tombstones before rehashing
+
+	static u32 Hash( u32 address )
+	{
+		return ((address >> 2) * 2654435761u) >> (32 - kNumSlotBits);
+	}
+
+	// Remove tombstones left behind by Erase()
+	void	Rehash()
+	{
+		std::vector< Slot > live;
+		live.reserve( mLive );
+		ForEach( [&live]( u32 address, u32 count ) { live.push_back( Slot{ address, count } ); } );
+
+		Clear();
+		for( const Slot & entry : live )
+		{
+			u32 idx = Hash( entry.Address );
+			while( mSlots[ idx ].Address != kEmpty )
+			{
+				idx = (idx + 1) & (kNumSlots - 1);
+			}
+			mSlots[ idx ] = entry;
+			++mLive;
+			++mUsed;
+		}
+	}
+
+	std::array< Slot, kNumSlots >	mSlots;
+	u32								mLive;
+	u32								mUsed;
+};
+
+static CHotTraceCounter				gHotTraceCountMap;
 CFragmentCache						gFragmentCache {};
 static bool							gResetFragmentCache {false};
 
@@ -314,12 +452,9 @@ void	CPU_DumpFragmentCache()
 	{
 		std::vector< SAddressHitCount >	hit_counts;
 
-		hit_counts.reserve( gHotTraceCountMap.size() );
+		hit_counts.reserve( gHotTraceCountMap.Size() );
 
-		for(std::map<u32,u32>::const_iterator it = gHotTraceCountMap.begin(); it != gHotTraceCountMap.end(); ++it )
-		{
-			hit_counts.push_back( SAddressHitCount( it->first, it->second ) );
-		}
+		gHotTraceCountMap.ForEach( [&hit_counts]( u32 address, u32 count ) { hit_counts.push_back( SAddressHitCount( address, count ) ); } );
 
 		std::sort( hit_counts.begin(), hit_counts.end(), SortByHitCount );
 
@@ -368,7 +503,7 @@ void CPU_CreateAndAddFragment()
 
 	if( p_fragment != nullptr )
 	{
-		gHotTraceCountMap.erase( p_fragment->GetEntryAddress() );
+		gHotTraceCountMap.Erase( p_fragment->GetEntryAddress() );
 		gFragmentCache.InsertFragment( p_fragment );
 
 		//DBGConsole_Msg( 0, "Inserted hot trace at [R%08x]! (size is %d. %dKB)", p_fragment->GetEntryAddress(), gFragmentCache.GetCacheSize(), gFragmentCache.GetMemoryUsage() / 1024 );
@@ -484,7 +619,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 #endif
 						{
 							gFragmentCache.Clear();
-							gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
+							gHotTraceCountMap.Clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 							Patch_PatchAll();
 #endif
@@ -501,20 +636,20 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize)
 					{
 						gFragmentCache.Clear();
-						gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
+						gHotTraceCountMap.Clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 						Patch_PatchAll();
 #endif
 					}
 
 					// If there is no fragment for this target, start tracing
-					u32 trace_count( ++gHotTraceCountMap[ gCPUState.CurrentPC ] );
-					if( gHotTraceCountMap.size() >= gMaxHotTraceMapSize )
+					u32 trace_count( gHotTraceCountMap.Increment( gCPUState.CurrentPC ) );
+					if( gHotTraceCountMap.Size() >= gMaxHotTraceMapSize )
 					{
 						#ifdef DAEDALUS_DEBUG_CONSOLE
-						DBGConsole_Msg( 0, "Hot trace cache hit %d, dumping", gHotTraceCountMap.size() );
+						DBGConsole_Msg( 0, "Hot trace cache hit %d, dumping", gHotTraceCountMap.Size() );
 						#endif
-						gHotTraceCountMap.clear();
+						gHotTraceCountMap.Clear();
 						gFragmentCache.Clear();
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 						Patch_PatchAll();
@@ -522,7 +657,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 					}
 					else if( trace_count == gHotTraceThreshold )
 					{
-						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.size() );
+						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.Size() );
 						gTraceRecorder.StartTrace( gCPUState.CurrentPC );
 
 						if(!trace_already_enabled)
@@ -537,8 +672,8 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						if(gAbortedTraceReasons.find( gCPUState.CurrentPC ) != gAbortedTraceReasons.end() )
 						{
 							u32 reason [[maybe_unused]] = gAbortedTraceReasons[ gCPUState.CurrentPC ];
-							//DBGConsole_Msg( 0, "Hot trace at [R%08x] has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.size( ) );
-							DAED_LOG( DEBUG_DYNAREC_CACHE, "Hot trace at %08x has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.size( ) );
+							//DBGConsole_Msg( 0, "Hot trace at [R%08x] has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.Size() );
+							DAED_LOG( DEBUG_DYNAREC_CACHE, "Hot trace at %08x has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.Size() );
 						}
 						else
 						{
@@ -566,7 +701,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 
 void Dynamo_Reset()
 {
-	gHotTraceCountMap.clear();
+	gHotTraceCountMap.Clear();
 	gFragmentCache.Clear();
 	gResetFragmentCache = false;
 	gTraceRecorder.AbortTrace();
