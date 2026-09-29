@@ -220,6 +220,12 @@ static CHotTraceCounter				gHotTraceCountMap;
 CFragmentCache						gFragmentCache {};
 static bool							gResetFragmentCache {false};
 
+// Set when compiled code hands back to the interpreter with a branch delay slot
+// still to run (the branch went the other way from when it was recorded). The
+// branch target is then counted as a trace start even if it is a forward branch,
+// otherwise code reached this way is never compiled.
+static bool							gCountNextBranchTarget {false};
+
 #ifdef DAEDALUS_DEBUG_DYNAREC
 std::map< u32, u32 >				gAbortedTraceReasons;
 
@@ -348,7 +354,8 @@ template< bool TraceEnabled > inline void CPU_EXECUTE_OP()
 		break;
 	case EXEC_DELAY:
 		{
-			bool	backwards( gCPUState.TargetPC <= gCPUState.CurrentPC );
+			bool	backwards( gCPUState.TargetPC <= gCPUState.CurrentPC || gCountNextBranchTarget );
+			gCountNextBranchTarget = false;
 
 			// We've just executed the delayed instr. Now carry out jump as stored in gCPUState.TargetPC;
 			CPU_SetPC(gCPUState.TargetPC);
@@ -388,6 +395,17 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 		// Keep executing ops as long as there's nothing to do
 		//
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
+
+		// Execution resumes here after interrupts, exceptions and other events, often at a
+		// new address such as the exception vector. Treat that like a branch target so it
+		// runs compiled code if there is some, and gets counted (and compiled) if not.
+		// Otherwise interrupt handlers always start in the interpreter.
+		if( DynaRec && stuff_to_do == 0 && gCPUState.Delay == NO_DELAY )
+		{
+			CPU_HandleDynaRecOnBranch( true, TraceEnabled );
+			stuff_to_do = gCPUState.GetStuffToDo();
+		}
+
 		{
 			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
 			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
@@ -647,6 +665,11 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 				p_fragment->Execute();
 			}
 			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
+
+			if( gCPUState.Delay == EXEC_DELAY )
+			{
+				gCountNextBranchTarget = true;
+			}
 
 			DYNAREC_PROFILE_ENTEREXIT( entry_address, gCPUState.CurrentPC, gCPUState.CPUControl[C0_COUNT]._u32 - entry_count );
 
