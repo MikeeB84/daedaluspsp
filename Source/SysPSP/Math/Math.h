@@ -5,7 +5,6 @@
 #include <utility>
 
 
-#ifdef DAEDALUS_PSP
 #include <pspfpu.h>
 // VFPU Math :D
 //
@@ -145,7 +144,6 @@ Check above notes for cycles/comparison
 // #define cosf(x)			std::cosf((x))
 // #define sincosf(x,s,c)	std::sincosf(x, s, c)
 
-#endif // DAEDALUS_PSP
 
  
 #endif // MATH_MATH_H_

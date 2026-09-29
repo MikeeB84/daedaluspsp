@@ -27,16 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <filesystem>
 #include <glm/glm.hpp>
 
-#if defined(DAEDALUS_GL)
-#include "SysGL/GL.h"
-#endif
-#if defined(DAEDALUS_GLES)
-#include "SysGLES/GL.h"
-#endif
 
-#ifdef DAEDALUS_CTR
-#include <GL/picaGL.h>
-#endif
 class c32;
 
 class CNativeTexture 
@@ -66,15 +57,9 @@ class CNativeTexture
 		inline const void *				GetData() const					{ return mpData; }
 		inline void *					GetData()						{ return mpData; }
 
-#if defined(DAEDALUS_CTR)
-		inline GLuint					GetTextureId() const				{ return mTextureId; }
 
-#endif
-
-#if defined(DAEDALUS_PSP) || defined(DAEDALUS_CTR)
 		inline f32						GetScaleX() const				{ return mScale.x; }
 		inline f32						GetScaleY() const				{ return mScale.y; }
-#endif
 
 		u32								GetBytesRequired() const;
 		bool							HasData() const;				// If we run out of texture memory, this will return true
@@ -90,11 +75,7 @@ class CNativeTexture
 		void *				mpData;
 		void *				mpPalette;
 
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-		GLuint				mTextureId;
-#endif
 
-#if defined(DAEDALUS_PSP) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
 		glm::vec2					mScale;
 		bool				mIsDataVidMem;
 		bool				mIsPaletteVidMem;
@@ -102,7 +83,6 @@ class CNativeTexture
 #ifdef DAEDALUS_ENABLE_ASSERTS
 		bool				mPaletteSet;
 #endif
-#endif // DAEDALUS_PSP
 };
 
 #endif // GRAPHICS_NATIVETEXTURE_H_

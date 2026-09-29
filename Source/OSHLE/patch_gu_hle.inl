@@ -1,8 +1,6 @@
 #define TEST_DISABLE_GU_FUNCS DAEDALUS_PROFILE(__FUNCTION__);
 
-#ifdef DAEDALUS_PSP
 #include "SysPSP/Math/Math.h"
-#endif 
 
 #include <cmath>
 
@@ -126,13 +124,6 @@ inline void vfpu_matrix_Ortho(u8 *m, float left, float right, float bottom, floa
 }
 #endif
 
-#ifndef DAEDALUS_PSP
-inline void sincosf(float x, float * s, float * c)
-{
-	*s = sinf(x);
-	*c = cosf(x);
-}
-#endif
 
 u32 Patch_guMtxIdentF()
 {

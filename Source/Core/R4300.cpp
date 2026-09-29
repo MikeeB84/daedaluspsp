@@ -37,18 +37,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Ultra/ultra_R4300.h"
 
-#ifdef DAEDALUS_PSP
 #include <pspfpu.h>
 #include "SysPSP/Math/Math.h"	// VFPU Math
 
 #define SIM_DOUBLES
-#else
-#include <float.h>
-#endif
 
-#if defined(DAEDALUS_POSIX) || defined(DAEDALUS_W32)
-#include <fenv.h>
-#endif
 
 #define SPEEDHACK_INTERPRETER // Probably can disalbe this on the PSP?
 
@@ -82,7 +75,6 @@ enum ERoundingMode
 };
 static ERoundingMode	gRoundingMode( RM_ROUND );
 
-#if defined(DAEDALUS_PSP)
 
 static const PspFpuRoundMode		gNativeRoundingModes[ RM_NUM_MODES ] =
 {
@@ -101,32 +93,6 @@ inline void SET_ROUND_MODE( ERoundingMode mode )
 }
 
 
-#elif DAEDALUS_POSIX || defined(DAEDALUS_W32)
-
-static const int		gNativeRoundingModes[ RM_NUM_MODES ] =
-{
-	FE_TONEAREST,	// RM_ROUND,
-	FE_TOWARDZERO,	// RM_TRUNC,
-	FE_UPWARD,		// RM_CEIL,
-	FE_DOWNWARD,	// RM_FLOOR,
-};
-
-inline void SET_ROUND_MODE( ERoundingMode mode )
-{
-	fesetround( gNativeRoundingModes[ mode ] );
-}
-
-#else
-
-// Need defining
-void SET_ROUND_MODE( ERoundingMode mode )
-{
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-	DAEDALUS_ERROR( "Floating point rounding modes not implemented on this platform" );
-	#endif
-}
-
-#endif
 
 // If the hardware doesn't support doubles in hardware - use 32 bits floats and accept the loss in precision
 #ifdef SIM_DOUBLES
@@ -264,7 +230,6 @@ inline f32 d64_to_f32( d64 x ) { return (f32)x; }
 
 
 //	Float -> int conversion routines
-#ifdef DAEDALUS_PSP
 
 //These ASM routines convert float to int and puts the value in CPU to sign extend, rather than FPU since the PSP doesn't have 64bit instructions //Corn
 //These can be risky since the N64 is expecting float to int64 and thus float can be larger than int, this happens with trunc_w_s on the 4th level of DK64..
@@ -307,89 +272,6 @@ inline s64 d64_to_s64_ceil( d64 x )					{ return (s64)ceilf( x ); }
 inline s64 d64_to_s64_floor( d64 x )				{ return (s64)floorf( x ); }
 inline s64 d64_to_s64( d64 x )						{ pspFpuSetRoundmode( gNativeRoundingModes[ gRoundingMode ] ); return (s64)x; }	// XXXX Need to do a cvt really
 
-#else
-
-inline s32 f32_to_s32_trunc( f32 x )	{ SET_ROUND_MODE( RM_TRUNC ); return (s32)truncf(x); }
-inline s32 f32_to_s32_round( f32 x )	{ SET_ROUND_MODE( RM_ROUND ); return (s32)roundf(x); }
-inline s32 f32_to_s32_ceil( f32 x )	{ SET_ROUND_MODE( RM_CEIL ); return (s32)ceilf(x); }
-inline s32 f32_to_s32_floor( f32 x )	{ SET_ROUND_MODE( RM_FLOOR ); return (s32)floorf(x); }
-inline s32 f32_to_s32( f32 x )
-{
-#ifdef DAEDALUS_ACCURATE_CVT
-	switch ( gCPUState.FPUControl[31]._u32 & FPCSR_RM_MASK )
-	{
-	case FPCSR_RM_RN:		return f32_to_s32_round( x );
-	case FPCSR_RM_RZ:		return f32_to_s32_trunc( x );
-	case FPCSR_RM_RP:		return f32_to_s32_ceil( x );
-	case FPCSR_RM_RM:		return f32_to_s32_floor( x );
-	default:				return (s32)x;
-	}
-#else
-	SET_ROUND_MODE( gRoundingMode );
-	return (s32)x;
-#endif
-}
-inline s64 f32_to_s64_trunc( f32 x )	{ SET_ROUND_MODE( RM_TRUNC ); return (s64)truncf(x); }
-inline s64 f32_to_s64_round( f32 x )	{ SET_ROUND_MODE( RM_ROUND ); return (s64)roundf(x); }
-inline s64 f32_to_s64_ceil( f32 x )	{ SET_ROUND_MODE( RM_CEIL ); return (s64)ceilf(x); }
-inline s64 f32_to_s64_floor( f32 x )	{ SET_ROUND_MODE( RM_FLOOR ); return (s64)floorf(x); }
-inline s64 f32_to_s64( f32 x )
-{
-#ifdef DAEDALUS_ACCURATE_CVT
-	switch ( gCPUState.FPUControl[31]._u32 & FPCSR_RM_MASK )
-	{
-	case FPCSR_RM_RN:		return f32_to_s64_round( x );
-	case FPCSR_RM_RZ:		return f32_to_s64_trunc( x );
-	case FPCSR_RM_RP:		return f32_to_s64_ceil( x );
-	case FPCSR_RM_RM:		return f32_to_s64_floor( x );
-	default:				return (s64)x;
-	}
-#else
-	SET_ROUND_MODE( gRoundingMode );
-	return (s64)x;
-#endif
-}
-inline s32 d64_to_s32_trunc( d64 x )	{ SET_ROUND_MODE( RM_TRUNC ); return (s32)trunc(x); }
-inline s32 d64_to_s32_round( d64 x )	{ SET_ROUND_MODE( RM_ROUND ); return (s32)round(x); }
-inline s32 d64_to_s32_ceil( d64 x )	{ SET_ROUND_MODE( RM_CEIL ); return (s32)ceil(x); }
-inline s32 d64_to_s32_floor( d64 x )	{ SET_ROUND_MODE( RM_FLOOR ); return (s32)floor(x); }
-inline s32 d64_to_s32( d64 x )
-{
-#ifdef DAEDALUS_ACCURATE_CVT
-	switch ( gCPUState.FPUControl[31]._u32 & FPCSR_RM_MASK )
-	{
-	case FPCSR_RM_RN:		return d64_to_s32_round( x );
-	case FPCSR_RM_RZ:		return d64_to_s32_trunc( x );
-	case FPCSR_RM_RP:		return d64_to_s32_ceil( x );
-	case FPCSR_RM_RM:		return d64_to_s32_floor( x );
-	default:				return (s32)x;
-	}
-#else
-	SET_ROUND_MODE( gRoundingMode );
-	return (s32)x;
-#endif
-}
-inline s64 d64_to_s64_trunc( d64 x ) { SET_ROUND_MODE( RM_TRUNC ); return (s64)trunc(x); }
-inline s64 d64_to_s64_round( d64 x ) { SET_ROUND_MODE( RM_ROUND ); return (s64)round(x); }
-inline s64 d64_to_s64_ceil( d64 x )  { SET_ROUND_MODE( RM_CEIL ); return (s64)ceil(x); }
-inline s64 d64_to_s64_floor( d64 x ) { SET_ROUND_MODE( RM_FLOOR ); return (s64)floor(x); }
-inline s64 d64_to_s64( d64 x )
-{
-#ifdef DAEDALUS_ACCURATE_CVT
-	switch ( gCPUState.FPUControl[31]._u32 & FPCSR_RM_MASK )
-	{
-	case FPCSR_RM_RN:		return d64_to_s64_round( x );
-	case FPCSR_RM_RZ:		return d64_to_s64_trunc( x );
-	case FPCSR_RM_RP:		return d64_to_s64_ceil( x );
-	case FPCSR_RM_RM:		return d64_to_s64_floor( x );
-	default:				return (s64)x;
-	}
-#else
-	SET_ROUND_MODE( gRoundingMode );
-	return (s64)x;
-#endif
-}
-#endif
 
 static void  R4300_Cop1_BCInstr( R4300_CALL_SIGNATURE );
 static void  R4300_Cop1_SInstr( R4300_CALL_SIGNATURE );
@@ -1410,56 +1292,8 @@ static void  R4300_Special_DMULT( R4300_CALL_SIGNATURE ) 		// Double Multiply
 	R4300_CALL_MAKE_OP( op_code );
 	// Reserved Instruction exception
 
-#ifndef DAEDALUS_128BIT_MULT
 	gCPUState.MultLo._u64 = gGPR[ op_code.rs ]._s64 * gGPR[ op_code.rt ]._s64;
 	gCPUState.MultHi._u64 = 0;
-#else
-	s64 rrs = gGPR[ op_code.rs ]._s64;
-	s64 rrt = gGPR[ op_code.rt ]._s64;
-
-	bool sign ;
-
-	if (rrs < 0)
-	{
-		rrs = -rrs;
-		sign = true;
-	}
-
-	if (rrt < 0)
-	{
-		rrt = -rrt;
-		sign = sign ? false : true;
-	}
-
-	u64 op1 = rrs & 0xFFFFFFFF;
-	u64 op2 = (rrs >> 32) & 0xFFFFFFFF;
-	u64 op3 = rrt & 0xFFFFFFFF;
-	u64 op4 = (rrt >> 32) & 0xFFFFFFFF;
-
-u64 temp1 = op1 * op3;
-u64	temp2 = (temp1 >> 32) + op1 * op4;
-u64	temp3 = op2 * op3;
-u64	temp4 = (temp3 >> 32) + op2 * op4;
-
-u64	result1 = temp1 & 0xFFFFFFFF;
-u64	result2 = temp2 + (temp3 & 0xFFFFFFFF);
-u64	result3 = (result2 >> 32) + temp4;
-u64	result4 = (result3 >> 32);
-
-s64	lo = result1 | (result2 << 32);
-s64	hi = (result3 & 0xFFFFFFFF) | (result4 << 32);
-	if (sign)
-	{
-		hi = ~hi;
-		if (!lo)
-			hi++;
-		else
-			lo = ~lo + 1;
-	}
-
-	gCPUState.MultLo._s64 = lo;
-	gCPUState.MultHi._s64 = hi;
-#endif
 }
 
 static void  R4300_Special_DMULTU( R4300_CALL_SIGNATURE ) 			// Double Multiply Unsigned
@@ -1467,31 +1301,8 @@ static void  R4300_Special_DMULTU( R4300_CALL_SIGNATURE ) 			// Double Multiply 
 	R4300_CALL_MAKE_OP( op_code );
 	// Reserved Instruction exception
 
-#ifndef DAEDALUS_128BIT_MULT
 	gCPUState.MultLo._u64 = gGPR[ op_code.rs ]._u64 * gGPR[ op_code.rt ]._u64;
 	gCPUState.MultHi._u64 = 0;
-#else
-	s64 rrs = gGPR[ op_code.rs ]._s64;
-	s64 rrt = gGPR[ op_code.rt ]._s64;
-
-u64	op1 = rrs & 0xFFFFFFFF;
-u64	op2 =(rrs >> 32) & 0xFFFFFFFF;
-u64	op3 = rrt & 0xFFFFFFFF;
-u64	op4 = (rrt >> 32) & 0xFFFFFFFF;
-
-u64	temp1 = op1 * op3;
-u64	temp2 = (temp1 >> 32) + op1 * op4;
-u64	temp3 = op2 * op3;
-u64	temp4 = (temp3 >> 32) + op2 * op4;
-
-u64	result1 = temp1 & 0xFFFFFFFF;
-u64	result2 = temp2 + (temp3 & 0xFFFFFFFF);
-u64	result3 = (result2 >> 32) + temp4;
-u64	result4 = (result3 >> 32);
-
-	gCPUState.MultLo._s64 = result1 | (result2 << 32);
-	gCPUState.MultHi._s64 = (result3 & 0xFFFFFFFF) | (result4 << 32);
-#endif
 }
 
 static void  R4300_Special_DDIV( R4300_CALL_SIGNATURE ) 				// Double Divide
@@ -2180,7 +1991,6 @@ static void  R4300_Cop1_CTC1( R4300_CALL_SIGNATURE ) 		// move Control word To C
 
 // Hack for the PSP, set rounding mode here, see notes in SET_ROUND_MODE
 // Fixes collision issues in the final boss of DK64 and camera icon not rotating, fixes collision issues in Rayman, and JFG too
-#ifdef DAEDALUS_PSP
 static void  R4300_Cop1_CTC1_2( R4300_CALL_SIGNATURE )
 {
 	R4300_CALL_MAKE_OP( op_code );
@@ -2210,7 +2020,6 @@ static void  R4300_Cop1_CTC1_2( R4300_CALL_SIGNATURE )
 	}
 	#endif
 }
-#endif
 
 static void  R4300_BC1_BC1F( R4300_CALL_SIGNATURE )		// Branch on FPU False
 {
@@ -3304,7 +3113,6 @@ void R4300_Init()
 		R4300Cop1SInstruction[Cop1OpFunc_CVT_D] = R4300_Cop1_S_CVT_D;
 	}
 #endif
-#ifdef DAEDALUS_PSP
 	if(g_ROM.SET_ROUND_MODE)
 	{
 		R4300Cop1Instruction[Cop1Op_CTC1]	= R4300_Cop1_CTC1_2;
@@ -3313,5 +3121,4 @@ void R4300_Init()
 	{
 		R4300Cop1Instruction[Cop1Op_CTC1]	= R4300_Cop1_CTC1;
 	}
-#endif
 }

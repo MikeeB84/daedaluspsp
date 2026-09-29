@@ -10,32 +10,19 @@
 
 // 720p is 1.5x multipler
 // 1440 is 5.3x multilier
-#ifdef DAEDALUS_PSP
 
 const s16 SCREEN_WIDTH {480};
 const s16 SCREEN_HEIGHT {272};
 constexpr s16 multipler = 1;
 
-#else
-const s16 SCREEN_WIDTH {1920}; // 4 x PSP Resolution
-const s16 SCREEN_HEIGHT {1080}; // 7 x PSP Resolution
-constexpr s16 multipler = 4;
-
-#endif
 // to do adjust values to suit multiple screens
 const s16 MENU_TOP {10 * multipler};
 const s16 TITLE_HEADER {20 * multipler};
 
 
-#ifdef DAEDALUS_PSP
 const s16 BELOW_MENU_MIN {33}; // Rename this as it's confusing
 const s16 LIST_TEXT_HEIGHT {216 * multipler}; // This affects Category and Romlist height.. Probably need to separate
 const s16 LIST_TEXT_TOP = 30;
-#else
-const s16 BELOW_MENU_MIN {80}; // Rename this as it's confusing
-const s16 LIST_TEXT_HEIGHT {210 * multipler}; // This affects Category and Romlist height.. Probably need to separate
-const s16 LIST_TEXT_TOP = {80};
-#endif
 
 const s16 ROM_LIST_TOP {LIST_TEXT_TOP * multipler};
 const s16 LIST_TEXT_LEFT {13 * multipler};
@@ -58,11 +45,7 @@ const s16 ROM_INFO_TEXT_Y {154 * multipler};
 
 const s16 BATTERY_INFO {200 * multipler};
 
-#ifdef DAEDALUS_PSP
 const s16 CATEGORY_TEXT_TOP {BELOW_MENU_MIN + LIST_TEXT_HEIGHT + 5 * multipler};
-#else
-const s16 CATEGORY_TEXT_TOP {BELOW_MENU_MIN + LIST_TEXT_HEIGHT + 10 * multipler};
-#endif 
 
 const s16 CATEGORY_TEXT_LEFT {1 * multipler};
 
@@ -149,13 +132,11 @@ const f32				DEFAULT_MAX_DEADZONE = 1.0f;
 const char * const		gRomsDirectories[] =
 {
    "Roms/" ,
-#ifdef DAEDALUS_PSP
 #ifndef DAEDALUS_SILENT
   // For ease of developing with multiple source trees, common folder for roms can be placed at host1: in usbhostfs
   "host1:/",
 #endif
   "ms0:/n64/",
-#endif
 };
 
 

@@ -16,11 +16,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/../daedalus.prx DESTINATION DaedalusX6
 list(APPEND daed_libs)
 set(daed_libs ${daed_libs} PARENT_SCOPE)
 
-if(DAEDALUS_SDL)
-list(APPEND sys_libraries pspkubridge pspfpu pspdebug SDL2_ttf freetype harfbuzz bz2)
-else()
 list(APPEND sys_libraries intrafont pspkubridge pspfpu pspdebug pspgu pspge pspaudio pspaudiolib psppower pspctrl pspdisplay)
-endif()
  set(sys_libraries ${sys_libraries} PARENT_SCOPE)
 
 set(plat_main SysPSP/main.cpp PARENT_SCOPE)

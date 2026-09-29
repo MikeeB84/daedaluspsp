@@ -693,17 +693,7 @@ void CFragment::Assemble( std::shared_ptr<CCodeBufferManager> p_manager,
 
 		CJumpLocation	branch_jump( nullptr );
  //PSP, We handle exceptions directly with _ReturnFromDynaRecIfStuffToDo
-#ifdef DAEDALUS_PSP
 		p_generator->GenerateOpCode( ti, ti.BranchDelaySlot, p_branch, &branch_jump);
-#else
-		CJumpLocation	exception_handler_jump( p_generator->GenerateOpCode( ti, ti.BranchDelaySlot, p_branch, &branch_jump) );
-
-		if( exception_handler_jump.IsSet() )
-		{
-			exception_handler_jumps.push_back( exception_handler_jump );
-			exception_handler_snapshots.push_back(p_generator->GetRegisterSnapshot());
-		}
-#endif
 
 		// Check whether we want to invert the status of this branch
 		if( p_branch != nullptr )
@@ -767,17 +757,7 @@ void CFragment::Assemble( std::shared_ptr<CCodeBufferManager> p_manager,
 			}
 			*/
  //PSP, We handle exceptions directly with _ReturnFromDynaRecIfStuffToDo
-#ifdef DAEDALUS_PSP
 			p_generator->GenerateOpCode( ti, true, nullptr, nullptr);
-#else
-			CJumpLocation	exception_handler_jump( p_generator->GenerateOpCode( ti, true, nullptr, nullptr) );
-
-			if( exception_handler_jump.IsSet() )
-			{
-				exception_handler_jumps.push_back( exception_handler_jump );
-				exception_handler_snapshots.push_back(p_generator->GetRegisterSnapshot());
-			}
-#endif
 			num_instructions_executed++;
 		}
 
@@ -907,27 +887,6 @@ const char * Sanitise( const char * str )
 	return out.c_str();
 }
 
-#if defined( DAEDALUS_W32) || defined(DAEDALUS_POSIX)
-
-extern char *disasmx86(u8 *opcode1,int codeoff1,int *len);
-void DisassembleBuffer( const u8 * buf, int buf_size, FILE * fh )
-{
-	// TODO: Need a more generic version
-	// int pos  = 0;             /* current position in buffer */
-	// char *strbuf;
-	// int len = 0;
-
-	// //const u32	base_address( reinterpret_cast< u32 >( buf ) );
-
-	// while ( pos < buf_size )
-	// {
-	// 	strbuf = disasmx86((u8*)buf + pos, 0, &len);
-	// 	fprintf( fh, "%08x: %s\n", buf + pos, Sanitise( strbuf ) );
-	// 	pos += len;
-	// }
-}
-
-#elif defined ( DAEDALUS_PSP )
 
 void DisassembleBuffer( const u8 * buf, int buf_size, FILE * fh )
 {
@@ -948,7 +907,6 @@ void DisassembleBuffer( const u8 * buf, int buf_size, FILE * fh )
 	}
 }
 
-#endif
 
 #endif // defined( DAEDALUS_DEBUG_DYNAREC )
 

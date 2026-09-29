@@ -1,54 +1,33 @@
 # DaedalusX64
- 
-DaedalusX64 is a Nintendo 64 emulator for PSP, 3DS, Vita, Linux, macOS and Windows
- 
+
+DaedalusX64 is a Nintendo 64 emulator for the Sony PSP.
+
+This fork targets the PSP only. Support for 3DS, Vita, Linux, macOS and Windows has been removed so the codebase can focus on PSP performance.
+
 ## Features:
- 
-- Fast emulation
+
+- Fast emulation using the PSP's MIPS dynarec, VFPU and Media Engine
 - High compatibility
-- Support for PSP / 3DS / macOS / Linux / Windows
-- Active support and updates
 
-## Things that don't work right now:
-- Big Endian (So no builds for PowerPC at the moment sorry).
- 
 ## Usage
- 
+
 Installing Daedalus:
-Download the latest release for your platform from https://github.com/DaedalusX64/daedalus/releases or if you dare, use the latest builds in the GitHub Action section
+Download the latest release from https://github.com/DaedalusX64/daedalus/releases or, if you dare, use the latest builds in the GitHub Actions section.
 
-Extra Steps:
-PSP: Copy the entire DaedalusX64 Folder to your Memory Stick and put into PSP/Game
+Copy the entire DaedalusX64 folder to your Memory Stick and put it into PSP/Game.
 
-macOS / Linux:
- Prerequisites: libpng / zlib / minizip / glew / SDL2 (You'll need to do this via a package manager.
- Execute the emulator ./daedalus 'Path to Rom' 
-Note - Native Apple Silicon build via GitHub is not available yet however it compiles fine and works (Just a bit slow as expected)
 ## Building
-All Versions require these libraries: zlib, libpng, minizip
- ## Building for PSP
-    Fetch the latest PSP Toolchain from https://github.com/pspdev/pspdev and install required libraries
-    
-    Run    ./build_daedalus.sh PSP and CMake will do the required fun stuff :)
 
-## Building for Windows 
+Fetch the latest PSP toolchain from https://github.com/pspdev/pspdev and make sure its `bin` folder is on your `PATH` and `PSPDEV` is set.
 
-NB: Windows build is broken at the moment 
+    ./build_daedalus.sh          # Release build
+    ./build_daedalus.sh DEBUG    # Debug build (asserts, debug console, logging)
 
-1) Clone and open the repo in Visual studio 2019
+The finished build is placed in the `DaedalusX64` folder.
 
-2) Build All
-
-## Building for Posix OS (Linux & macOS)
-Posix OSes additionally require glew / SDL2
-
-1) Clone this repo 
-
-2) ./build_daedalus.sh (This will auto detect the OS you are on)
- 
- ## CI
- DaedalusX64 now has CI, you can get the latest nightlies from the Actions Tab.
- Warning: these builds are sporatic at times.
+## CI
+DaedalusX64 has CI; you can get the latest nightlies from the Actions tab.
+Warning: these builds are sporadic at times.
 
 ## More Info
  

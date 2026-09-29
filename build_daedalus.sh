@@ -2,42 +2,27 @@
 
 PROC_NR=$(getconf _NPROCESSORS_ONLN)
 
-## This file is the standard way of building Daedalus, you may build manually using cmake but your milage may vary on certain platforms.
+## This file is the standard way of building Daedalus for the PSP.
+## Usage: ./build_daedalus.sh [DEBUG]
+## The PSP argument from older instructions is still accepted and ignored.
 
 #Clear last build
-rm -r build 
+rm -rf build
 
- function psp_plugins() {
-   make --quiet -j $PROC_NR -C "$PWD/Source/SysPSP/PRX/DveMgr" || { exit 1; }
-   make --quiet -j $PROC_NR -C "$PWD/Source/SysPSP/PRX/ExceptionHandler" || { exit 1; }
-   make --quiet -j $PROC_NR -C "$PWD/Source/SysPSP/PRX/MediaEngine" || { exit 1; }
- }
+function psp_plugins() {
+  make --quiet -j $PROC_NR -C "$PWD/Source/SysPSP/PRX/DveMgr" || { exit 1; }
+  make --quiet -j $PROC_NR -C "$PWD/Source/SysPSP/PRX/ExceptionHandler" || { exit 1; }
+  make --quiet -j $PROC_NR -C "$PWD/Source/SysPSP/PRX/MediaEngine" || { exit 1; }
+}
 
-# Add any custom console toolchains
-case "$1" in
-    PSP)
-    psp_plugins
-    CMAKE=psp-cmake
-    ;;
-    CTR)
-    CMAKE="cmake -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake""
-    CMAKEDEFINES+="-DCTR=1"
-    ;;
-    WIN)
-    CMAKE="cmake -DCMAKE_TOOLCHAIN_FILE="Tools/cmake/mingw-g++.cmake""
-    ;;
-    *)
-    CMAKE=cmake
-    CMAKEDEFINES=""
-    ;;
-esac
-
+CMAKEDEFINES=""
 if [[ $1 = "DEBUG" ]] || [[ $2 = "DEBUG" ]]; then
     CMAKEDEFINES+=" -DCMAKE_BUILD_TYPE=Debug -DDEBUG=1 "
 else
     CMAKEDEFINES+=" -DCMAKE_BUILD_TYPE=Release"
 fi
-    # Use the custom define to do initial build then parse cmake after
-    $CMAKE $CMAKEDEFINES -S . -B build 
-    cmake --build build -j${PROC_NR}
-    cmake --install build --prefix $PWD
+
+psp_plugins
+psp-cmake $CMAKEDEFINES -S . -B build || { exit 1; }
+cmake --build build -j${PROC_NR} || { exit 1; }
+cmake --install build --prefix $PWD

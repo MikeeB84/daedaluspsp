@@ -27,9 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <cstring>
 #include <fstream>
 
-#ifdef DAEDALUS_PSP
 #include "SysPSP/Utility/CacheUtil.h"
-#endif
 
 CAudioBuffer::CAudioBuffer(u32 buffer_size)
     : mBufferBegin(new Sample[buffer_size]),
@@ -71,9 +69,7 @@ fh.flush();
  }
 #endif 
 // clear the Cache
-#ifdef DAEDALUS_PSP
 // sceKernelDcacheWritebackInvalidateAll();
-#endif
   const Sample *read_ptr(
       mReadPtr); // No need to invalidate, as this is uncached/volatile
   Sample *write_ptr(mWritePtr);
@@ -157,9 +153,7 @@ u32 CAudioBuffer::Drain(Sample *samples, u32 num_samples) {
 // Todo: Check Cache Routines
 //  Ideally we could just invalidate this range?
 // clear the Cache
-#ifdef DAEDALUS_PSP
 // sceKernelDcacheWritebackInvalidateAll();
-#endif
 
   const Sample *read_ptr(mReadPtr); // No need to invalidate, as this is uncached/volatile
   const Sample *write_ptr(mWritePtr); //
@@ -192,9 +186,7 @@ std::ofstream fh;
 #endif 
   mReadPtr = read_ptr; // No need to invalidate, as this is uncached
 // clear the Cache
-#ifdef DAEDALUS_PSP
 // sceKernelDcacheWritebackInvalidateAll();
-#endif
   //
   //	If there weren't enough samples, zero out the buffer
   //	FIXME(strmnnrmn): Unnecessary on OSX...

@@ -113,10 +113,8 @@ void	ISplashScreen::Render()
 	mpContext->ClearBackground();
 	mpContext->RenderTexture( mpTexture, (SCREEN_WIDTH - mpTexture->GetWidth()) / 2, (SCREEN_HEIGHT - mpTexture->GetHeight()) / 2, colour);
 
-#if DAEDALUS_PSP
 	mpContext->SetFontStyle( CUIContext::FS_HEADING );
 	mpContext->DrawTextAlign(0,SCREEN_WIDTH,AT_CENTRE,SCREEN_HEIGHT-50,g32bitColorMode? "32Bit Color Selected" : "16Bit Color Selected",DrawTextUtilities::TextWhite);
-#endif
 }
 
 void	ISplashScreen::Run()

@@ -29,7 +29,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <malloc.h>
 
-#ifdef DAEDALUS_PSP
 inline void *malloc_64(int size)
 {
 	int mod_64 {size & 0x3f};
@@ -65,6 +64,5 @@ inline void dcache_inv_range(void *addr, int size)
    for(i = j; i < size+j; i += 64)
       __builtin_allegrex_cache(0x1b, i);
 }
-#endif
 
 #endif // SYSPSP_UTILITY_CACHEUTIL_H_

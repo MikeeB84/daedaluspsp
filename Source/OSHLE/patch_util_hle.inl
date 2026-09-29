@@ -198,9 +198,6 @@ u32 Patch_bzero()
 
 	u8* dst8 = (u8*)ReadAddress(dst);
 
-#ifdef DAEDALUS_ENDIAN_BIG
-	memset( dst8, 0, len);
-#else
 	// Align dst on 4 bytes or just resume if already done
 	while(((uintptr_t)dst8 & 0x3) && len)
 	{
@@ -235,7 +232,6 @@ u32 Patch_bzero()
 	{
 	*(u8*)((uintptr_t)dst8++ ^ U8_TWIDDLE) = 0;
 	}
-#endif
 
 	// return value of dest
 	gGPR[REG_v0]._s64 = (s64) gGPR[REG_a0]._u32_0;

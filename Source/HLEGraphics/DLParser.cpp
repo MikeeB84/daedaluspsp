@@ -175,9 +175,6 @@ static const char ** gUcodeName = gNormalInstructionName[ GBI_0 ];
 bool gFrameskipActive = false;
 
 // Define this to validate an address before referencing an N64 ram location
-#ifndef DAEDALUS_PSP
-#define VALIDATE_ADDRESS_SEG
-#endif
 
 // Always call this function before referencing an N64 ram location
 // In most cases we are already in range, see RDPSegAddr. No need to call this when size its 0
@@ -364,9 +361,6 @@ bool DLParser_Initialise()
 	gUcodeName = gNormalInstructionName[ GBI_0 ];
 
 	//Clear pointers in TMEM block //Corn
-	#ifdef DAEDALUS_ACCURATE_TMEM
-	memset(gTlutLoadAddresses, 0, sizeof(gTlutLoadAddresses));
-	#endif
 	return true;
 }
 
@@ -1042,11 +1036,7 @@ void DLParser_FillRect( MicroCodeCommand command )
 	{
 		CGraphicsContext::Get()->ClearZBuffer();
 
-#ifdef DAEDALUS_PSP
 		if(gClearDepthFrameBuffer)
-#else
-		if(true)	//This always enabled for PC, this should be optional once we have a GUI to disable it!
-#endif
 		{
 			Clear_N64DepthBuffer(command);
 		}

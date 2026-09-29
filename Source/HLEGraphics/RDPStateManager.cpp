@@ -26,7 +26,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Debug/DBGConsole.h"
 #include "HLEGraphics/DLDebug.h"
 #include "HLEGraphics/RDPStateManager.h"
-#include "HLEGraphics/TMEM.h"
 #include "HLEGraphics/uCodes/UcodeDefs.h"
 #include "Utility/MathUtil.h"
 #include "Ultra/ultra_gbi.h"
@@ -49,9 +48,6 @@ RDP_OtherMode		gRDPOtherMode;
 u32 gTlutLoadAddresses[ MAX_TMEM_ADDRESS >> 6 ];
 
 
-#ifdef DAEDALUS_ACCURATE_TMEM
-u8 gTMEM[ MAX_TMEM_ADDRESS ];
-#endif
 
 
 CRDPStateManager::CRDPStateManager()
@@ -137,67 +133,6 @@ void CRDPStateManager::LoadBlock(const SetLoadTile & load)
 	info.Swapped = swapped;
 
 
-#ifdef DAEDALUS_ACCURATE_TMEM
-	u32 lrs    = load.sh;
-	u32 bytes  = ((lrs+1) << g_TI.Size) >> 1;
-
-	DAEDALUS_DL_ASSERT( bytes <= 4096, "Suspiciously large loadblock: %d bytes", bytes );
-	DAEDALUS_DL_ASSERT( bytes, "LoadBLock: No bytes??" );
-
-	u32 qwords = (bytes+7) / 8;
-	u32 tmem_offset = (rdp_tile.tmem << 3);
-	u32 ram_offset  = address;
-
-	if (( (address + bytes) > MAX_RAM_ADDRESS) || (tmem_offset + bytes) > MAX_TMEM_ADDRESS )
-	{
-		DBGConsole_Msg(0, "[WWarning LoadBlock address is invalid]" );
-		return;
-	}
-
-	u32* dst = (u32*)(gTMEM + tmem_offset);
-	u32* src = (u32*)(g_pu8RamBase + ram_offset);
-
-	if (dxt == 0)
-	{
-		CopyLineQwords(dst, src, qwords);
-	}
-	else
-	{
-		void (*CopyLineQwordsMode)(void*, const void*, u32);
-
-		if(g_TI.Size == G_IM_SIZ_32b)
-			CopyLineQwordsMode = CopyLineQwordsSwap32;
-		else
-			CopyLineQwordsMode = CopyLineQwordsSwap;
-
-		u32 qwords_per_line = (2048 + dxt-1) / dxt;
-
-		DAEDALUS_ASSERT(qwords_per_line == (u32)ceilf(2048.f / (float)dxt), "Broken DXT calc");
-
-		u32 odd_row = 0;
-		for (u32 i = 0; i < qwords; /* updated in loop */)
-		{
-			u32 qwords_to_copy = std::min(qwords-i, qwords_per_line);
-
-			if (odd_row)
-			{
-				CopyLineQwordsMode(dst, src, qwords_to_copy);
-			}
-			else
-			{
-				CopyLineQwords(dst, src, qwords_to_copy);
-			}
-
-			i  += qwords_to_copy;
-			qwords_to_copy *= 2;				// 2 32bit words per qword
-			dst			+= qwords_to_copy;
-			src			+= qwords_to_copy;
-			odd_row     ^= 0x1;					// Odd lines are word swapped
-		}
-	}
-
-	//InvalidateTileHashes();
-#endif // DAEDALUS_ACCURATE_TMEM
 }
 
 void CRDPStateManager::LoadTile(const SetLoadTile & load)
@@ -230,70 +165,6 @@ void CRDPStateManager::LoadTile(const SetLoadTile & load)
 	info.Pitch = pitch;
 	info.Swapped = false;
 
-#ifdef DAEDALUS_ACCURATE_TMEM
-	if (rdp_tile.line == 0)
-	{
-		return;
-	}
-
-	u32 lrs   = load.sh;
-	u32 lrt   = load.th;
-	u32 ram_address = address;
-	u32 h           = ((lrt-ult)>>2) + 1;
-	u32 w           = ((lrs-uls)>>2) + 1;
-	u32 bytes [[maybe_unused]]    = ((h * w) << g_TI.Size) >> 1;
-
-#ifdef DAEDALUS_DEBUG_DISPLAYLIST
-	DAEDALUS_DL_ASSERT( bytes <= MAX_TMEM_ADDRESS,
-		"Suspiciously large texture load: %d bytes (%dx%d, %dbpp)",
-		bytes, w, h, (1<<(g_TI.Size+2)) );
-#endif
-
-	u32  tmem_offset = rdp_tile.tmem << 3;
-	u32  ram_offset  = ram_address;
-	u32 bytes_per_tmem_line = rdp_tile.line << 3;
-
-	void (*CopyLineMode)(void*, const void*, u32);
-
-	if (g_TI.Size == G_IM_SIZ_32b)
-	{
-		bytes_per_tmem_line *= 2;
-		CopyLineMode = CopyLineSwap32;
-	}
-	else
-	{
-		CopyLineMode = CopyLineSwap;
-	}
-
-	u32 bytes_to_copy = (bytes_per_tmem_line * h);
-	if ((address + bytes_to_copy) > MAX_RAM_ADDRESS || (tmem_offset + bytes_to_copy) > MAX_TMEM_ADDRESS)
-	{
-		DBGConsole_Msg(0, "[WWarning LoadTile address is invalid]" );
-		return;
-	}
-
-	u8* dst = gTMEM + tmem_offset;
-	u8* src =  g_pu8RamBase + ram_offset;
-
-	for (u32 y  = 0; y < h; ++y)
-	{
-		if (y&1)
-		{
-			CopyLineMode(dst, src, bytes_per_tmem_line);
-		}
-		else
-		{
-			CopyLine(dst, src, bytes_per_tmem_line);
-		}
-
-		// There might be uninitialised padding bytes here, but we don't care.
-
-		dst += bytes_per_tmem_line;
-		src += pitch;
-	}
-
-	//InvalidateTileHashes();
-#endif // DAEDALUS_ACCURATE_TMEM
 }
 
 void CRDPStateManager::LoadTlut(const SetLoadTile & load)
@@ -317,14 +188,6 @@ void CRDPStateManager::LoadTlut(const SetLoadTile & load)
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	DL_PF("    TLut Addr[0x%08x] TMEM[0x%03x] Tile[%d] Count[%d] Format[%s] (%d,%d)->(%d,%d)",
 		ram_offset, rdp_tile.tmem, tile_idx, count, kTLUTTypeName[gRDPOtherMode.text_tlut], uls >> 2, ult >> 2, lrs >> 2, lrt >> 2);
-#endif
-#ifdef DAEDALUS_ACCURATE_TMEM
-	DAEDALUS_DL_ASSERT( (rdp_tile.tmem + count) <= (MAX_TMEM_ADDRESS/8), "LoadTlut address is invalid" );
-
-	u16* dst = (u16*)(((u64*)gTMEM) + rdp_tile.tmem);
-	u16* src = (u16*)(g_pu8RamBase + ram_offset);
-
-	CopyLine16(dst, src, count);
 #endif
 }
 
@@ -400,12 +263,6 @@ const TextureInfo & CRDPStateManager::GetUpdatedTextureDescriptor( u32 idx )
 		u16		tile_width  = GetTextureDimension( rdp_tilesize.GetWidth(),  rdp_tile.mask_s, rdp_tile.clamp_s );
 		u16		tile_height = GetTextureDimension( rdp_tilesize.GetHeight(), rdp_tile.mask_t, rdp_tile.clamp_t );
 
-#ifdef DAEDALUS_ACCURATE_TMEM
-		ti.SetTlutAddress( gTlutLoadAddresses[0] );
-		ti.SetLine( rdp_tile.line );
-		// NB: ACCURATE_TMEM doesn't care about pitch - it's already been loaded into tmem.
-		// We only care about line.
-#else
 		//
 		//If indexed TMEM PAL address is nullptr then assume that the base address is stored in
 		//TMEM address 0x100 (gTlutLoadAddresses[ 0 ]) and calculate offset from there with TLutIndex(palette index)
@@ -428,7 +285,6 @@ const TextureInfo & CRDPStateManager::GetUpdatedTextureDescriptor( u32 idx )
 			}
 		}
 		ti.SetTlutAddress( tlut_base );
-#endif
 		ti.SetTmemAddress( rdp_tile.tmem );
 		ti.SetLoadAddress( address );
 		ti.SetPalette( rdp_tile.palette );

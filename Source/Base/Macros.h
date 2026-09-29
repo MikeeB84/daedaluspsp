@@ -11,7 +11,6 @@
 #define DAEDALUS_USE(...)	do { (void)sizeof(__VA_ARGS__, 0); } while(0)
 
 
-#ifdef DAEDALUS_PSP
     template <typename T>
    constexpr T make_uncached_ptr(T ptr) 
    {
@@ -19,10 +18,6 @@
         ptrInt |= 0x40000000;
         return std::bit_cast<T>(ptrInt);
     }
-#else
-    template <typename T>
-    constexpr T make_uncached_ptr(T ptr) { return ptr; }
-#endif
 
 // We need this directive for backwards compatibility with devices that do not have C++ 20 available which enables use of std::format or fmt::format (with external library)
 #if __has_include(<format>)

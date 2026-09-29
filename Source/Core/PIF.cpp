@@ -110,9 +110,6 @@ area assignment does not change. After Tx/RxData assignment, this flag is reset 
 
 
 
-#ifdef _MSC_VER
-#pragma warning(default : 4002)
-#endif
 
 #ifdef DAEDALUS_DEBUG_PIF
 
@@ -129,9 +126,6 @@ area assignment does not change. After Tx/RxData assignment, this flag is reset 
 	#define DPF_PIF( ... )
 #endif
 
-#ifdef DAEDALUS_VITA
-#include <vitasdk.h>
-#endif
 
 #define PIF_RAM_SIZE 64
 
@@ -273,24 +267,14 @@ IController::IController() :
 	mDebugFile.open(controller_path, std::ios::out);
 #endif
 
-#ifdef DAEDALUS_VITA
-	SceCtrlPortInfo pinfo;
-	sceCtrlGetControllerPortInfo(&pinfo);
-#endif
 
 	for (u32 i = 0; i < NUM_CONTROLLERS; i++)
 	{
-#ifdef DAEDALUS_VITA
-		mContPresent[i] = pinfo.port[i ? (i+1) : 0] != SCE_CTRL_TYPE_UNPAIRED;
-#else
 		mContPresent[i] = false;
-#endif
 	}
 
-#ifndef DAEDALUS_VITA
 	// Only one controller is enabled, this has to be revised once mltiplayer is introduced
 	mContPresent[0] = true;
-#endif
 }
 
 
@@ -707,14 +691,7 @@ void	IController::CommandWriteRumblePack(u32 channel [[maybe_unused]], u8 *cmd)
 	u16 addr = (cmd[3] << 8) | (cmd[4] & 0xE0);
 
 	if ( addr == 0xC000 ) {
-#ifdef DAEDALUS_VITA
-		SceCtrlActuator handle;
-		handle.small = cmd[5] ? 100 : 0;
-		handle.large = cmd[5] ? 100 : 0;
-		sceCtrlSetActuator(channel + 1, &handle);
-#else
 		gRumblePakActive = cmd[5] ? true : false;
-#endif
 	}
 
 	cmd[37] = CalculateDataCrc(&cmd[5]);
