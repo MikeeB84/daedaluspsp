@@ -40,7 +40,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <glm/ext.hpp>
 
 #include <vector>
-#include <random>
+#include "Utility/FastRand.h"
 
 #include "SysPSP/Math/Math.h"
 
@@ -285,7 +285,6 @@ void BaseRenderer::InitViewport()
 	// Init the N64 viewport.
 	mVpScale = glm::vec2( 640.f*0.25f, 480.f*0.25f );
 	mVpTrans = glm::vec2( 640.f*0.25f, 480.f*0.25f );
-		std::default_random_engine FastRand;
 	// Get the current display dimensions. This might change frame by frame e.g. if the window is resized.
 	u32 display_width  = 0;
 	u32 display_height = 0;
@@ -1515,8 +1514,8 @@ void BaseRenderer::UpdateTileSnapshots( u32 tile_idx )
 	}
 }
 
-static void T1Hack(const TextureInfo & ti0, std::shared_ptr<CNativeTexture> texture0,
-				   const TextureInfo & ti1, std::shared_ptr<CNativeTexture> texture1)
+static void T1Hack(const TextureInfo & ti0, const std::shared_ptr<CNativeTexture> & texture0,
+				   const TextureInfo & ti1, const std::shared_ptr<CNativeTexture> & texture1)
 {
 	if((ti0.GetFormat() == G_IM_FMT_RGBA) &&
 	   (ti1.GetFormat() == G_IM_FMT_I) &&

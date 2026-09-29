@@ -294,7 +294,7 @@ static inline std::shared_ptr<CNativeTexture> Load_ObjSprite( const uObjSprite *
 //
 //*****************************************************************************
 template< ESpriteMode mode > 
-static void Draw_ObjSprite( const uObjSprite *sprite, const std::shared_ptr<CNativeTexture> texture )
+static void Draw_ObjSprite( const uObjSprite *sprite, const std::shared_ptr<CNativeTexture> & texture )
 {
 	f32 imageW = sprite->imageW / 32.0f;
 	f32 imageH = sprite->imageH / 32.0f;

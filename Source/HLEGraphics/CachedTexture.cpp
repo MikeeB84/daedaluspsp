@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Types.h"
 
 #include <vector>
-#include <random>
+#include "Utility/FastRand.h"
 
 #include "Interface/ConfigOptions.h"
 #include "Core/ROM.h"
@@ -122,7 +122,7 @@ static bool GenerateTexels(void ** p_texels,
 	return false;
 }
 
-static void UpdateTexture( const TextureInfo & ti, std::shared_ptr<CNativeTexture> texture )
+static void UpdateTexture( const TextureInfo & ti, const std::shared_ptr<CNativeTexture> & texture )
 {
 	#ifdef DAEDALUS_PROFILE
 	DAEDALUS_PROFILE( "Texture Conversion" );
@@ -208,7 +208,6 @@ bool CachedTexture::Initialise()
 	#endif
 	u32 width  = mTextureInfo.GetWidth();
 	u32 height = mTextureInfo.GetHeight();
-	std::default_random_engine FastRand;
 
 	if (mTextureInfo.GetEmulateMirrorS()) width  *= 2;
 	if (mTextureInfo.GetEmulateMirrorT()) height *= 2;
@@ -283,7 +282,6 @@ bool CachedTexture::IsFresh() const
 
 bool CachedTexture::HasExpired() const
 {
-	std::default_random_engine FastRand;
 	if (!kUpdateTexturesEveryFrame)
 	{
 		if (!IsFresh())

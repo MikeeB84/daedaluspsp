@@ -326,7 +326,7 @@ void RendererPSP::RenderTriangles( DaedalusVtx * p_vertices, u32 num_vertices, b
 	{
 		UpdateTileSnapshots( mTextureTile );
 
-		const std::shared_ptr<CNativeTexture> texture = mBoundTexture[0];
+		const std::shared_ptr<CNativeTexture> & texture = mBoundTexture[0];
 
 		if( texture && (mTnL.Flags._u32 & (TNL_LIGHT|TNL_TEXGEN)) != (TNL_LIGHT|TNL_TEXGEN) )
 		{
@@ -635,7 +635,7 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 				// NB if install_texture0 and install_texture1 are both set, 1 wins out
 				texture_idx = install_texture1;
 
-				const std::shared_ptr<CNativeTexture> texture1 = mBoundTexture[ 1 ];
+				const std::shared_ptr<CNativeTexture> & texture1 = mBoundTexture[ 1 ];
 
 				if( install_texture1 && texture1 && mTnL.Flags.Texture && (mTnL.Flags._u32 & (TNL_LIGHT|TNL_TEXGEN)) != (TNL_LIGHT|TNL_TEXGEN) )
 				{
@@ -653,17 +653,21 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 				texture_idx = install_texture0 ? 0 : 1;
 			}
 
-			std::shared_ptr<CNativeTexture> texture;
+			// Raw pointer: the texture cache / bound slot keeps it alive, and
+			// avoids atomic reference count updates on every draw call
+			CNativeTexture * texture;
+			std::shared_ptr<CNativeTexture> white_texture;
 
 			if(out.MakeTextureWhite)
 			{
 				TextureInfo white_ti = mBoundTextureInfo[ texture_idx ];
 				white_ti.SetWhite(true);
-				texture = CTextureCache::Get()->GetOrCreateTexture( white_ti );
+				white_texture = CTextureCache::Get()->GetOrCreateTexture( white_ti );
+				texture = white_texture.get();
 			}
 			else
 			{
-				texture = mBoundTexture[ texture_idx ];
+				texture = mBoundTexture[ texture_idx ].get();
 			}
 
 			if(texture != nullptr)
@@ -891,7 +895,7 @@ void RendererPSP::FillRect( const glm::vec2 & xy0, const glm::vec2 & xy1, u32 co
 }
 
 void RendererPSP::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
-								f32 u0, f32 v0, f32 u1, f32 v1, std::shared_ptr<CNativeTexture> texture)
+								f32 u0, f32 v0, f32 u1, f32 v1, const std::shared_ptr<CNativeTexture> & texture)
 {
 	texture->InstallTexture();
 	DAEDALUS_PROFILE( "RendererPSP::Draw2DTexture" );
@@ -923,7 +927,7 @@ void RendererPSP::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
 	// Handling height > 512 doesn't work well? Ignore for now
 	if( u1 >= 512.f )
 	{
-		const std::shared_ptr<CNativeTexture> texture = mBoundTexture[0];
+		const std::shared_ptr<CNativeTexture> & texture = mBoundTexture[0];
 		Draw2DTextureBlit( x0, y0, x1, y1, u0, v0, u1, v1, texture );
 		return;
 	}
@@ -960,7 +964,7 @@ void RendererPSP::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
 
 void RendererPSP::Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1,
 								 f32 x2, f32 y2, f32 x3, f32 y3,
-								 f32 s, f32 t, std::shared_ptr<CNativeTexture> texture)	// With Rotation
+								 f32 s, f32 t, const std::shared_ptr<CNativeTexture> & texture)	// With Rotation
 {
 	texture->InstallTexture();
 	DAEDALUS_PROFILE( "RendererPSP::Draw2DTextureR" );
@@ -1026,7 +1030,7 @@ void RendererPSP::Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1,
 // See http://www.assembla.com/code/openTRI for more information.
 void RendererPSP::Draw2DTextureBlit(f32 x, f32 y, f32 width, f32 height,
 									f32 u0, f32 v0, f32 u1, f32 v1,
-									const std::shared_ptr<CNativeTexture> texture)
+									const std::shared_ptr<CNativeTexture> & texture)
 {
 	if (texture == nullptr)
 	{
