@@ -88,6 +88,30 @@ bool InitialiseMediaEngine()
 	}
 }
 
+// Wait for the Media Engine to finish its current audio list. Never run a list on the
+// main CPU while the ME is still working on one: both use the same HLE audio state.
+// Returns false (and stops using the ME) if it has not finished after a generous
+// timeout, e.g. because the ME crashed, so the game carries on with synchronous audio.
+static bool WaitForMediaEngine()
+{
+	if( !gLoadedMediaEnginePRX )
+		return false;
+
+	if( !CheckME( mei ) )
+	{
+		const u32 start = sceKernelGetSystemTimeLow();
+		while( !CheckME( mei ) )
+		{
+			if( sceKernelGetSystemTimeLow() - start > 250 * 1000 )
+			{
+				gLoadedMediaEnginePRX = false;
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 #endif
 
 #define RSP_AUDIO_INTR_CYCLES     1
@@ -190,6 +214,9 @@ bool		AudioPluginPSP::StartEmulation()
 
 void	AudioPluginPSP::StopEmulation()
 {
+#ifdef DAEDALUS_PSP_USE_ME
+	WaitForMediaEngine();
+#endif
     Audio_Reset();
   	StopAudio();
     sceKernelDeleteSema(mSemaphore);
@@ -243,6 +270,13 @@ EProcessResult	AudioPluginPSP::ProcessAList()
 		case APM_ENABLED_ASYNC:
 			{
 #ifdef DAEDALUS_PSP_USE_ME
+				if( !WaitForMediaEngine() )
+				{
+					Audio_Ucode();
+					result = PR_COMPLETED;
+					break;
+				}
+
 				sceKernelDcacheWritebackInvalidateAll();
 				if(BeginME( mei, (int)&Audio_Ucode, (int)NULL, -1, NULL, -1, NULL) < 0){
 						Audio_Ucode();
