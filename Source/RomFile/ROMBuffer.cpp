@@ -60,7 +60,7 @@ namespace
 	bool		ShouldLoadAsFixed( u32 rom_size [[maybe_unused]] )
 	{
 		if (PSP_IS_SLIM && !gGlobalPreferences.LargeROMBuffer)
-			return rom_size <= 32 * 1024 * 1024;
+			return rom_size <= 16 * 1024 * 1024;		// Must fit the 16MB ROM heap (see RomFileMemory.cpp)
 		else
 			return rom_size <= 2 * 1024 * 1024;
 	}
@@ -190,11 +190,17 @@ bool RomBuffer::Open()
 
 	sRomSize = p_rom_file->GetRomSize();
 
+	// Allocate memory for the whole rom - round up to a 4 byte boundry.
+	// If there is not enough memory, fall back to streaming through the file cache
+	// rather than writing through a null pointer.
+	u8 *	p_bytes = nullptr;
 	if( ShouldLoadAsFixed( sRomSize ) )
 	{
-		// Now, allocate memory for rom - round up to a 4 byte boundry
-		u32		size_aligned =  AlignPow2( sRomSize, 4 );
-		u8 *	p_bytes =  (u8*)CROMFileMemory::Get()->Alloc( size_aligned );
+		p_bytes = (u8*)CROMFileMemory::Get()->Alloc( AlignPow2( sRomSize, 4 ) );
+	}
+
+	if( p_bytes != nullptr )
+	{
 
 		u32 offset = 0;
 		u32 length_remaining( sRomSize );

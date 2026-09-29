@@ -95,12 +95,29 @@ bool IROMFileMemory::IsAvailable()
 
 void * IROMFileMemory::Alloc( u32 size )
 {
-	std::cout << "Allocating Memory" << std::endl;
-	return mRomMemoryHeap->Alloc( size );
+	// Prefer the dedicated heap; if it is too small for this request (e.g. a
+	// ROM larger than the heap in ROM Buffer mode) try the general heap.
+	// Callers must still handle a null result.
+	void * ptr = mRomMemoryHeap->Alloc( size );
+	if( ptr == nullptr )
+	{
+		ptr = malloc( size );
+	}
+	return ptr;
 }
 
 
 void  IROMFileMemory::Free(void * ptr)
 {
-	mRomMemoryHeap->Free( ptr );
+	if( ptr == nullptr )
+		return;
+
+	if( mRomMemoryHeap->IsFromHeap( ptr ) )
+	{
+		mRomMemoryHeap->Free( ptr );
+	}
+	else
+	{
+		free( ptr );
+	}
 }
