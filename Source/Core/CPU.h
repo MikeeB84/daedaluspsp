@@ -247,7 +247,9 @@ extern	void (* g_pCPUCore)();
 //***********************************************
 inline bool CPU_ProcessEventCycles( u32 cycles )
 {
-	LOCK_EVENT_QUEUE();
+	// No lock: this runs once per interpreted instruction, and the event queue is only
+	// touched by the emulation thread. The dynarec exit stubs update the same counter
+	// without locking too (see _DirectExitCheckNoDelay).
 #ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT( gCPUState.NumEvents > 0, "There are no events" );
 	#endif
