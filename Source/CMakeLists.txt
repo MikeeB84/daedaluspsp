@@ -145,6 +145,7 @@ create_pbp_file(
 	ICON_PATH ${PROJECT_SOURCE_DIR}/Source/SysPSP/Resources/eboot_icons/icon0.png
 	BACKGROUND_PATH ${PROJECT_SOURCE_DIR}/Source/SysPSP/Resources/eboot_icons/pic1.png
 	TITLE DaedalusX64
+	MEMSIZE 1	# Request the extra memory of PSP 2000 and later (newer toolchains default to 2 = 24MB only)
 	BUILD_PRX
 	)
 
