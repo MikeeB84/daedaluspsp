@@ -41,6 +41,7 @@ enum EPerfCounter
 	PERF_COUNT_TRACE_ABORT,			// ...and had to throw it away (exception)
 	PERF_COUNT_TRACE_SALVAGED,		// ...was cut short by an interrupt but compiled what it had
 	PERF_COUNT_FRAGMENT,			// Fragments compiled
+	PERF_COUNT_FLUSH,				// Whole fragment cache thrown away (any reason)
 
 	NUM_PERF_COUNTERS
 };
@@ -72,6 +73,20 @@ enum ETraceEvent
 	TRACE_EVENT_COMPILED,
 };
 void	PerfStats_TraceEvent( ETraceEvent event, u32 start_address, u32 pc, u32 stuff_to_do, u32 length );
+
+// Record the instructions of an aborted trace (first time per start address)
+void	PerfStats_CaptureAbortedTrace( u32 start_address, const u32 * addresses, u32 count );
+
+// Why the whole fragment cache was thrown away
+enum EFlushReason
+{
+	FLUSH_INVALIDATE_REQUEST,	// Game wrote over / invalidated compiled code (flush happens at next safe point)
+	FLUSH_INVALIDATE_DONE,		// ...and the pending flush was carried out
+	FLUSH_CACHE_FULL,			// Too many fragments
+	FLUSH_HOT_MAP_FULL,			// Too many distinct branch targets being counted
+	NUM_FLUSH_REASONS
+};
+void	PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length );
 
 inline void PerfStats_Enter( EPerfCategory category )
 {

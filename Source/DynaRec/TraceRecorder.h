@@ -57,6 +57,7 @@ public:
 	// at least one instruction, and not part way through a branch.
 	bool				CanStopTrace() const;
 	u32					GetTraceLength() const						{ return mTraceBuffer.size(); }
+	u32					GetTraceEntryAddress( u32 i ) const			{ return mTraceBuffer[ i ].Address; }
 #ifdef DAEDALUS_ENABLE_ASSERTS
 	u32					GetStartTraceAddress() const				{ DAEDALUS_ASSERT_Q( mTracing ); return mStartTraceAddress; }
 #else

@@ -42,7 +42,7 @@ namespace
 	u32				gCountsPerSecond[ NUM_PERF_COUNTERS ] = {};
 
 	// Interpreter hotspots: which N64 PC was being interpreted when sampled
-	const u32		kNumPcSlots = 256;
+	const u32		kNumPcSlots = 1024;
 	struct SPcSample { u32 Pc; u32 Count; };
 	SPcSample		gInterpPcs[ kNumPcSlots ];
 	volatile u32	gInterpPcsDropped = 0;
@@ -50,7 +50,7 @@ namespace
 	void RecordInterpPc( u32 pc )
 	{
 		u32 idx = (pc >> 2) & (kNumPcSlots - 1);
-		for( u32 i = 0; i < 8; ++i )
+		for( u32 i = 0; i < 16; ++i )
 		{
 			SPcSample & slot = gInterpPcs[ (idx + i) & (kNumPcSlots - 1) ];
 			if( slot.Count == 0 || slot.Pc == pc )
@@ -84,7 +84,7 @@ namespace
 	}
 
 	// Trace statistics per start address
-	const u32		kNumTraceSlots = 128;
+	const u32		kNumTraceSlots = 1024;
 	struct STraceStats
 	{
 		u32		StartAddress;
@@ -99,6 +99,25 @@ namespace
 	STraceStats		gTraceStats[ kNumTraceSlots ];
 	u32				gNumTraceStats = 0;
 	u32				gTraceStatsDropped = 0;
+
+	// Instruction listings of aborted traces
+	const u32		kNumCapturedTraces = 8;
+	const u32		kMaxCapturedOps = 48;
+	struct SCapturedTrace
+	{
+		u32		StartAddress;
+		u32		Count;
+		u32		Addresses[ kMaxCapturedOps ];
+	};
+	SCapturedTrace	gCapturedTraces[ kNumCapturedTraces ];
+	u32				gNumCapturedTraces = 0;
+
+	// Fragment cache flushes
+	u32				gFlushCounts[ NUM_FLUSH_REASONS ] = {};
+	const u32		kNumFlushLog = 16;
+	struct SFlushEvent { u32 Reason; u32 Address; u32 Length; };
+	SFlushEvent		gFlushLog[ kNumFlushLog ];
+	u32				gNumFlushLog = 0;
 
 	void ResetCounts()
 	{
@@ -223,6 +242,49 @@ void PerfStats_TraceEvent( ETraceEvent event, u32 start_address, u32 pc, u32 stu
 	}
 }
 
+void PerfStats_CaptureAbortedTrace( u32 start_address, const u32 * addresses, u32 count )
+{
+	if( !gPerfStatsEnabled )
+	{
+		return;
+	}
+	for( u32 i = 0; i < gNumCapturedTraces; ++i )
+	{
+		if( gCapturedTraces[ i ].StartAddress == start_address )
+		{
+			return;
+		}
+	}
+	if( gNumCapturedTraces >= kNumCapturedTraces )
+	{
+		return;
+	}
+	SCapturedTrace & capture = gCapturedTraces[ gNumCapturedTraces++ ];
+	capture.StartAddress = start_address;
+	capture.Count = count < kMaxCapturedOps ? count : kMaxCapturedOps;
+	memcpy( capture.Addresses, addresses, capture.Count * sizeof( u32 ) );
+}
+
+void PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length )
+{
+	if( reason != FLUSH_INVALIDATE_REQUEST )
+	{
+		PerfStats_Count( PERF_COUNT_FLUSH );
+	}
+	if( !gPerfStatsEnabled )
+	{
+		return;
+	}
+	gFlushCounts[ reason ]++;
+	if( gNumFlushLog < kNumFlushLog )
+	{
+		gFlushLog[ gNumFlushLog++ ] = SFlushEvent{ reason, address, length };
+	}
+}
+
+// Implemented in Core/Dynamo.cpp: hit count and fragment state for a PC
+extern void Dynamo_DescribePc( u32 pc, u32 * hot_count, bool * has_fragment );
+
 namespace
 {
 	// Read an instruction for the report without side effects (RDRAM only)
@@ -274,7 +336,7 @@ namespace
 		fprintf( fh, "==== %s - report %u (last ~10 seconds)\n", g_ROM.settings.GameName.c_str(), (unsigned)gReportIndex++ );
 
 		// Interpreter hotspots
-		SPcSample pcs[ kNumPcSlots ];
+		static SPcSample pcs[ kNumPcSlots ];
 		u32 num_pcs = 0;
 		u32 total = 0;
 		for( u32 i = 0; i < kNumPcSlots; ++i )
@@ -289,10 +351,15 @@ namespace
 		std::sort( pcs, pcs + num_pcs, []( const SPcSample & a, const SPcSample & b ) { return a.Count > b.Count; } );
 		fprintf( fh, "Interpreter samples: %u (dropped %u)\n", (unsigned)total, (unsigned)gInterpPcsDropped );
 		gInterpPcsDropped = 0;
-		for( u32 i = 0; i < num_pcs && i < 24; ++i )
+		fprintf( fh, "  samples  [hits so far / compiled here?]\n" );
+		for( u32 i = 0; i < num_pcs && i < 32; ++i )
 		{
-			char prefix[ 32 ];
-			snprintf( prefix, sizeof( prefix ), "  %5u  ", (unsigned)pcs[ i ].Count );
+			u32 hot_count = 0;
+			bool has_fragment = false;
+			Dynamo_DescribePc( pcs[ i ].Pc, &hot_count, &has_fragment );
+
+			char prefix[ 48 ];
+			snprintf( prefix, sizeof( prefix ), "  %5u  [%4u %s]  ", (unsigned)pcs[ i ].Count, (unsigned)hot_count, has_fragment ? "yes" : " no" );
 			WriteInstruction( fh, pcs[ i ].Pc, prefix );
 		}
 
@@ -321,12 +388,45 @@ namespace
 				fprintf( fh, "\n" );
 			}
 		}
+		if( gNumTraceStats > 32 )
+		{
+			fprintf( fh, "  (%u more addresses)\n", (unsigned)(gNumTraceStats - 32) );
+		}
 		if( gTraceStatsDropped )
 		{
 			fprintf( fh, "  (%u events for other addresses not recorded)\n", (unsigned)gTraceStatsDropped );
 		}
 		gNumTraceStats = 0;
 		gTraceStatsDropped = 0;
+
+		// Aborted trace listings
+		for( u32 i = 0; i < gNumCapturedTraces; ++i )
+		{
+			const SCapturedTrace & capture = gCapturedTraces[ i ];
+			fprintf( fh, "Aborted trace %08x (%u ops):\n", (unsigned)capture.StartAddress, (unsigned)capture.Count );
+			for( u32 j = 0; j < capture.Count; ++j )
+			{
+				WriteInstruction( fh, capture.Addresses[ j ], "      " );
+			}
+		}
+		gNumCapturedTraces = 0;
+
+		// Flushes
+		fprintf( fh, "Fragment cache flushes: invalidate requests %u, done %u, cache full %u, branch-target table full %u\n",
+			(unsigned)gFlushCounts[ FLUSH_INVALIDATE_REQUEST ], (unsigned)gFlushCounts[ FLUSH_INVALIDATE_DONE ],
+			(unsigned)gFlushCounts[ FLUSH_CACHE_FULL ], (unsigned)gFlushCounts[ FLUSH_HOT_MAP_FULL ] );
+		static const char * const kReasonNames[ NUM_FLUSH_REASONS ] = { "invalidate request", "invalidate done", "cache full", "branch-target table full" };
+		for( u32 i = 0; i < gNumFlushLog; ++i )
+		{
+			fprintf( fh, "  %s", kReasonNames[ gFlushLog[ i ].Reason ] );
+			if( gFlushLog[ i ].Reason == FLUSH_INVALIDATE_REQUEST )
+			{
+				fprintf( fh, " at %08x, %u bytes", (unsigned)gFlushLog[ i ].Address, (unsigned)gFlushLog[ i ].Length );
+			}
+			fprintf( fh, "\n" );
+		}
+		for( u32 i = 0; i < NUM_FLUSH_REASONS; ++i ) gFlushCounts[ i ] = 0;
+		gNumFlushLog = 0;
 
 		fprintf( fh, "\n" );
 		fclose( fh );
@@ -377,17 +477,18 @@ void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 	{
 		gLoggedHeader = true;
 		gLoggedGame = g_ROM.settings.GameName;
-		snprintf( line, sizeof( line ), "# %s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled\n", gLoggedGame.c_str() );
+		snprintf( line, sizeof( line ), "# %s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes\n", gLoggedGame.c_str() );
 		Append( line );
 	}
 
-	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u %u | %u %u %u %u | %u %u %u | %u %u %u %u\n",
+	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u %u | %u %u %u %u | %u %u %u | %u %u %u %u %u\n",
 		fps, (unsigned)vbls_per_second, (unsigned)tv_hz,
 		(unsigned)gPercent[ PERF_CPU_INTERP ], (unsigned)gPercent[ PERF_CPU_DYNAREC ], (unsigned)gPercent[ PERF_CPU_COMPILE ], (unsigned)gPercent[ PERF_CPU ],
 		(unsigned)gPercent[ PERF_GFX ], (unsigned)gPercent[ PERF_GFX_VTX ], (unsigned)gPercent[ PERF_GFX_TEX ], (unsigned)gPercent[ PERF_GFX_DRAW ],
 		(unsigned)gPercent[ PERF_AUDIO ], (unsigned)gPercent[ PERF_GE_WAIT ], (unsigned)gPercent[ PERF_LIMITER ],
 		(unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_START ], (unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_ABORT ],
-		(unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_SALVAGED ], (unsigned)gCountsPerSecond[ PERF_COUNT_FRAGMENT ] );
+		(unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_SALVAGED ], (unsigned)gCountsPerSecond[ PERF_COUNT_FRAGMENT ],
+		(unsigned)gCountsPerSecond[ PERF_COUNT_FLUSH ] );
 	Append( line );
 
 	if( ++gSamplesSinceFlush >= kFlushEverySamples )

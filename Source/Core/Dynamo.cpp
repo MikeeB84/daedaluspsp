@@ -78,6 +78,19 @@ public:
 
 	u32		Size() const					{ return mLive; }
 
+	// Current count for an address without changing it (0 if not present)
+	u32		Get( u32 address ) const
+	{
+		u32 idx = Hash( address );
+		for (;;)
+		{
+			const Slot & slot = mSlots[ idx ];
+			if( slot.Address == address ) return slot.Count;
+			if( slot.Address == kEmpty ) return 0;
+			idx = (idx + 1) & (kNumSlots - 1);
+		}
+	}
+
 	void	Clear()
 	{
 		mSlots.fill( Slot{ kEmpty, 0 } );
@@ -230,6 +243,7 @@ u32 gFragmentLookupSuccess {};
 //*****************************************************************************
 void  CPU_InvalidateICache()
 {
+	PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, 0, 0xFFFFFFFF );
 	CPU_ResetFragmentCache();
 }
 
@@ -249,6 +263,7 @@ void  CPU_InvalidateICacheRange( u32 address, u32 length )
 {
 	if( gFragmentCache.ShouldInvalidateOnWrite( address, length ) )
 	{
+		PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, address, length );
 #ifndef DAEDALUS_SILENT
 		printf( "Write to %08x (%d bytes) overlaps fragment cache entries\n", address, length );
 #endif
@@ -421,6 +436,13 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 				{
 					PerfStats_Count( PERF_COUNT_TRACE_ABORT );
 					PerfStats_TraceEvent( TRACE_EVENT_ABORT, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
+					if( gPerfStatsEnabled )
+					{
+						u32 addresses[ 48 ];
+						u32 count = trace_length < 48 ? trace_length : 48;
+						for( u32 i = 0; i < count; ++i ) addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
+						PerfStats_CaptureAbortedTrace( trace_start, addresses, count );
+					}
 					gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an exception etc
 				}
 			}
@@ -648,6 +670,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						if(true)
 #endif
 						{
+							PerfStats_NoteFlush( FLUSH_INVALIDATE_DONE, 0, 0 );
 							gFragmentCache.Clear();
 							gHotTraceCountMap.Clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -665,6 +688,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 
 					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize)
 					{
+						PerfStats_NoteFlush( FLUSH_CACHE_FULL, 0, 0 );
 						gFragmentCache.Clear();
 						gHotTraceCountMap.Clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -679,6 +703,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						#ifdef DAEDALUS_DEBUG_CONSOLE
 						DBGConsole_Msg( 0, "Hot trace cache hit %d, dumping", gHotTraceCountMap.Size() );
 						#endif
+						PerfStats_NoteFlush( FLUSH_HOT_MAP_FULL, 0, 0 );
 						gHotTraceCountMap.Clear();
 						gFragmentCache.Clear();
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -736,6 +761,13 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 	}
 }
 
+// Used by the dynarec.txt report
+void Dynamo_DescribePc( u32 pc, u32 * hot_count, bool * has_fragment )
+{
+	*hot_count = gHotTraceCountMap.Get( pc );
+	*has_fragment = gFragmentCache.LookupFragmentQ( pc ) != nullptr;
+}
+
 void Dynamo_Reset()
 {
 	gHotTraceCountMap.Clear();
@@ -764,6 +796,7 @@ void Dynamo_SelectCore()
 #else
 
 void CPU_ResetFragmentCache() {}
+void Dynamo_DescribePc( u32, u32 * hot_count, bool * has_fragment ) { *hot_count = 0; *has_fragment = false; }
 void Dynamo_Reset() {}
 void  CPU_InvalidateICacheRange( u32 address [[maybe_unused]], u32 length [[maybe_unused]] ) {}
 
