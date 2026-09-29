@@ -38,6 +38,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <pspdebug.h>
 
 #include "Core/Memory.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 
 extern void battery_warning();
@@ -193,8 +194,12 @@ void CGraphicsPluginImpl::UpdateScreen()
 	if( current_origin != last_origin )
 	{
 		//printf( "Flip (%08x, %08x)\n", current_origin, last_origin );
+		gPerfStatsEnabled = gGlobalPreferences.DisplayFramerate;
 		if( gGlobalPreferences.DisplayFramerate )
+		{
 			UpdateFramerate();
+			PerfStats_Update();
+		}
 
 		const f32 Fsync = FramerateLimiter_GetSync();
 
@@ -217,6 +222,10 @@ void CGraphicsPluginImpl::UpdateScreen()
 				pspDebugScreenPrintf( "Dlist[%d] Cull[%d] | Tris[%d] Cull[%d] | Rect[%d] Clip[%d] ", gNumInstructionsExecuted, gNumDListsCulled, gRenderer->GetNumTrisRendered(), gRenderer->GetNumTrisClipped(), gRenderer->GetNumRect(), gNumRectsClipped);
 #else
 				pspDebugScreenPrintf( "FPS[%#.1f] VB[%d/%d] Sync[%#.1f%%]   ", gCurrentFramerate, u32( Fsync * f32( FramerateLimiter_GetTvFrequencyHz() ) ), FramerateLimiter_GetTvFrequencyHz(), Fsync * 100.0f );
+				pspDebugScreenSetXY(0, 1);
+				pspDebugScreenPrintf( "CPU %2d%% GFX %2d%% AUD %2d%% GE %2d%% IDLE %2d%%   ",
+					PerfStats_GetPercent( PERF_CPU ), PerfStats_GetPercent( PERF_GFX ), PerfStats_GetPercent( PERF_AUDIO ),
+					PerfStats_GetPercent( PERF_GE_WAIT ), PerfStats_GetPercent( PERF_LIMITER ) );
 #endif
 			}
 			if( gGlobalPreferences.BatteryWarning )
