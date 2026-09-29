@@ -394,6 +394,7 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 				gAbortedTraceReasons[ start_address ] = stuff_to_do;
 #endif
 
+				// Disabled by default: salvaging made Star Fox crash on real hardware at boot.
 				// An interrupt arrived (or was raised by the last instruction) while recording.
 				// Keep what was recorded up to here: the fragment exits at the current PC, and
 				// compiled code already leaves a fragment when an instruction raises an interrupt.
@@ -403,9 +404,13 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 				const u32 trace_start = gTraceRecorder.GetStartTraceAddress();
 				const u32 trace_length = gTraceRecorder.GetTraceLength();
 
+#ifdef ALLOW_TRACES_WHICH_EXCEPT
 				if( (stuff_to_do & ~CPU_CHANGE_CORE) == CPU_CHECK_INTERRUPTS &&
 					gCPUState.Delay == NO_DELAY &&
 					gTraceRecorder.CanStopTrace() )
+#else
+				if( false )
+#endif
 				{
 					PerfStats_Count( PERF_COUNT_TRACE_SALVAGED );
 					PerfStats_TraceEvent( TRACE_EVENT_SALVAGED, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
