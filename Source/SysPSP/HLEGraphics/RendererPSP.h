@@ -73,6 +73,12 @@ private:
 	using BlendStatesMap = std::map < u64, SBlendStateEntry >;
 	BlendStatesMap		mBlendStatesMap;
 
+	// Consecutive draws nearly always use the same combiner, so remember the
+	// last lookup. Entries in mBlendStatesMap are never changed or removed.
+	u64					mLastBlendKey = 0;
+	SBlendStateEntry	mLastBlendEntry;
+	bool				mLastBlendValid = false;
+
 
 	// Functions and members related to the DisplayListDebugger.
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
