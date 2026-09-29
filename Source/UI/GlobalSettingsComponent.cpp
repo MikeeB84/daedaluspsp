@@ -253,7 +253,7 @@ namespace
 		virtual const char *	GetSettingName() const
 		{
 			if ( gGlobalPreferences.DisplayFramerate )
-				return "FS + VB + SYNC";
+				return "FPS + Timing";
 			else
 				return "None";
 		}
@@ -294,7 +294,7 @@ IGlobalSettingsComponent::IGlobalSettingsComponent( CUIContext * p_context )
 :	CGlobalSettingsComponent( p_context )
 {
 
-	mElements.Add(std::make_unique<CInfoSetting>( "Display Info", "Whether to show additional info while the rom is running. Some modes are only available in DEBUG mode") );
+	mElements.Add(std::make_unique<CInfoSetting>( "Display Framerate", "Show the framerate, plus where frame time goes (CPU, graphics, audio, GE wait, idle), while the rom is running.") );
 	mElements.Add(std::make_unique<CViewPortSetting>( "Viewport Size", "The size of the viewport on the PSP." ) );
 
 	if (HAVE_DVE && PSP_TV_CABLE > 0)
