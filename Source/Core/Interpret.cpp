@@ -36,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Macros.h"
 #include "Utility/Profiler.h"
 #include "Debug/Synchroniser.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 //*****************************************************************************
 //	Execute a single MIPS op. The conditionals for the templated arguments
@@ -142,11 +143,14 @@ void CPU_Go()
 		// Keep executing ops as long as there's nothing to do
 		//
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
-		while(stuff_to_do == 0)
 		{
-			CPU_EXECUTE_OP< false >();
+			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
+			while(stuff_to_do == 0)
+			{
+				CPU_EXECUTE_OP< false >();
 
-			stuff_to_do = gCPUState.GetStuffToDo();
+				stuff_to_do = gCPUState.GetStuffToDo();
+			}
 		}
 
 		if (CPU_CheckStuffToDo())

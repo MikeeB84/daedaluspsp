@@ -231,9 +231,11 @@ void CGraphicsPluginImpl::UpdateScreen()
 					(int)PerfStats_GetCpuPercent(), (int)PerfStats_GetGfxPercent(), (int)PerfStats_GetPercent( PERF_AUDIO ),
 					(int)PerfStats_GetPercent( PERF_GE_WAIT ), (int)PerfStats_GetPercent( PERF_LIMITER ) );
 				pspDebugScreenSetXY(0, 2);
-				pspDebugScreenPrintf( "CPU: INT %2d%% DYN %2d%% JIT %2d%%   ",
-					(int)PerfStats_GetPercent( PERF_CPU ), (int)PerfStats_GetPercent( PERF_CPU_DYNAREC ),
-					(int)PerfStats_GetPercent( PERF_CPU_COMPILE ) );
+				pspDebugScreenPrintf( "CPU: INT %2d%% DYN %2d%% JIT %2d%% OTH %2d%% TRACE %d/%d/%d   ",
+					(int)PerfStats_GetPercent( PERF_CPU_INTERP ), (int)PerfStats_GetPercent( PERF_CPU_DYNAREC ),
+					(int)PerfStats_GetPercent( PERF_CPU_COMPILE ), (int)PerfStats_GetPercent( PERF_CPU ),
+					(int)PerfStats_GetCount( PERF_COUNT_TRACE_START ), (int)PerfStats_GetCount( PERF_COUNT_TRACE_ABORT ),
+					(int)PerfStats_GetCount( PERF_COUNT_FRAGMENT ) );
 				pspDebugScreenSetXY(0, 3);
 				pspDebugScreenPrintf( "GFX: DL %2d%% VTX %2d%% TEX %2d%% DRAW %2d%%   ",
 					(int)PerfStats_GetPercent( PERF_GFX ), (int)PerfStats_GetPercent( PERF_GFX_VTX ),

@@ -62,6 +62,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 static const u32					gMaxFragmentCacheSize = (8192 + 1024); //Maximum amount of fragments in the cache
 static const u32					gMaxHotTraceMapSize = (2048 + TRACE_SIZE);
 static const u32					gHotTraceThreshold = 10;	//How many times interpreter has to loop a trace before it becomes hot and sent to dynarec
+static const u32					gHotTraceRetryInterval = 16;	//If recording a hot trace was aborted (e.g. by an interrupt), try again after this many more hits
 
 
 //*****************************************************************************
@@ -372,11 +373,14 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 		// Keep executing ops as long as there's nothing to do
 		//
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
-		while(stuff_to_do == 0)
 		{
-			CPU_EXECUTE_OP< TraceEnabled >();
+			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
+			while(stuff_to_do == 0)
+			{
+				CPU_EXECUTE_OP< TraceEnabled >();
 
-			stuff_to_do = gCPUState.GetStuffToDo();
+				stuff_to_do = gCPUState.GetStuffToDo();
+			}
 		}
 
 		if( TraceEnabled && (stuff_to_do != CPU_CHANGE_CORE) )
@@ -400,6 +404,7 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 #endif
 
 				gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an interrupt etc
+				PerfStats_Count( PERF_COUNT_TRACE_ABORT );
 			}
 			CPU_SelectCore();
 		}
@@ -505,6 +510,7 @@ void CPU_CreateAndAddFragment()
 
 	if( p_fragment != nullptr )
 	{
+		PerfStats_Count( PERF_COUNT_FRAGMENT );
 		gHotTraceCountMap.Erase( p_fragment->GetEntryAddress() );
 		gFragmentCache.InsertFragment( p_fragment );
 
@@ -660,8 +666,14 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						Patch_PatchAll();
 #endif
 					}
-					else if( trace_count == gHotTraceThreshold )
+					// A trace is aborted if an interrupt or exception arrives while it is
+					// being recorded. Retry periodically rather than only on the exact
+					// threshold hit, otherwise one unlucky abort leaves that code in the
+					// interpreter until the next cache flush.
+					else if( trace_count >= gHotTraceThreshold &&
+							 ((trace_count - gHotTraceThreshold) % gHotTraceRetryInterval) == 0 )
 					{
+						PerfStats_Count( PERF_COUNT_TRACE_START );
 						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.Size() );
 						gTraceRecorder.StartTrace( gCPUState.CurrentPC );
 

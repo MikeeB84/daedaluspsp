@@ -19,7 +19,8 @@ of the License, or (at your option) any later version.
 // cost of a scope is a few instructions. Scopes nest: the innermost one wins.
 enum EPerfCategory
 {
-	PERF_CPU = 0,		// Interpreter, trace recording and anything not listed below
+	PERF_CPU = 0,		// Anything not listed below: event/interrupt handling, dispatch, OS HLE...
+	PERF_CPU_INTERP,	// Interpreting N64 instructions one at a time (including trace recording)
 	PERF_CPU_DYNAREC,	// Running dynarec compiled code (fragments)
 	PERF_CPU_COMPILE,	// Compiling fragments / flushing the fragment cache
 	PERF_GFX,			// Display list parsing and everything in HLE graphics not listed below
@@ -33,6 +34,16 @@ enum EPerfCategory
 	NUM_PERF_CATEGORIES
 };
 
+// Event counters, reported per second
+enum EPerfCounter
+{
+	PERF_COUNT_TRACE_START = 0,		// Dynarec started recording a hot trace
+	PERF_COUNT_TRACE_ABORT,			// ...and had to throw it away (interrupt/exception)
+	PERF_COUNT_FRAGMENT,			// Fragments compiled
+
+	NUM_PERF_COUNTERS
+};
+
 extern bool gPerfStatsEnabled;
 
 namespace PerfStatsInternal
@@ -40,7 +51,16 @@ namespace PerfStatsInternal
 	const u32 kMaxDepth = 16;
 	extern volatile u8	gStack[ kMaxDepth ];
 	extern volatile u32	gDepth;
+	extern u32			gCounters[ NUM_PERF_COUNTERS ];
 }
+
+inline void PerfStats_Count( EPerfCounter counter )
+{
+	PerfStatsInternal::gCounters[ counter ]++;
+}
+
+// Events per second over the last sample
+u32		PerfStats_GetCount( EPerfCounter counter );
 
 inline void PerfStats_Enter( EPerfCategory category )
 {
