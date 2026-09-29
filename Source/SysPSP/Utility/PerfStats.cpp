@@ -26,6 +26,7 @@ namespace PerfStatsInternal
 	volatile u8		gStack[ kMaxDepth ];
 	volatile u32	gDepth = 0;
 	u32				gCounters[ NUM_PERF_COUNTERS ] = {};
+	volatile u32	gInterpEntry = 0;
 }
 
 using namespace PerfStatsInternal;
@@ -45,22 +46,32 @@ namespace
 	const u32		kNumPcSlots = 1024;
 	struct SPcSample { u32 Pc; u32 Count; };
 	SPcSample		gInterpPcs[ kNumPcSlots ];
+	SPcSample		gInterpEntries[ kNumPcSlots ];
 	volatile u32	gInterpPcsDropped = 0;
 
-	void RecordInterpPc( u32 pc )
+	bool RecordPc( SPcSample * table, u32 pc )
 	{
 		u32 idx = (pc >> 2) & (kNumPcSlots - 1);
 		for( u32 i = 0; i < 16; ++i )
 		{
-			SPcSample & slot = gInterpPcs[ (idx + i) & (kNumPcSlots - 1) ];
+			SPcSample & slot = table[ (idx + i) & (kNumPcSlots - 1) ];
 			if( slot.Count == 0 || slot.Pc == pc )
 			{
 				slot.Pc = pc;
 				slot.Count++;
-				return;
+				return true;
 			}
 		}
-		gInterpPcsDropped = gInterpPcsDropped + 1;
+		return false;
+	}
+
+	void RecordInterpPc( u32 pc )
+	{
+		if( !RecordPc( gInterpPcs, pc ) )
+		{
+			gInterpPcsDropped = gInterpPcsDropped + 1;
+		}
+		RecordPc( gInterpEntries, gInterpEntry );
 	}
 
 	// Runs in interrupt context: only read the stack and bump a counter
@@ -351,7 +362,7 @@ namespace
 		std::sort( pcs, pcs + num_pcs, []( const SPcSample & a, const SPcSample & b ) { return a.Count > b.Count; } );
 		fprintf( fh, "Interpreter samples: %u (dropped %u)\n", (unsigned)total, (unsigned)gInterpPcsDropped );
 		gInterpPcsDropped = 0;
-		fprintf( fh, "  samples  [hits so far / compiled here?]\n" );
+		fprintf( fh, "  samples  [hits so far / compiled here?]  (hits and compiled only mean something at an entry address)\n" );
 		for( u32 i = 0; i < num_pcs && i < 32; ++i )
 		{
 			u32 hot_count = 0;
@@ -361,6 +372,39 @@ namespace
 			char prefix[ 48 ];
 			snprintf( prefix, sizeof( prefix ), "  %5u  [%4u %s]  ", (unsigned)pcs[ i ].Count, (unsigned)hot_count, has_fragment ? "yes" : " no" );
 			WriteInstruction( fh, pcs[ i ].Pc, prefix );
+		}
+
+		// Where runs of interpreted code began
+		{
+			static SPcSample entries[ kNumPcSlots ];
+			u32 num_entries = 0;
+			for( u32 i = 0; i < kNumPcSlots; ++i )
+			{
+				if( gInterpEntries[ i ].Count )
+				{
+					entries[ num_entries++ ] = gInterpEntries[ i ];
+				}
+				gInterpEntries[ i ].Count = 0;
+			}
+			std::sort( entries, entries + num_entries, []( const SPcSample & a, const SPcSample & b ) { return a.Count > b.Count; } );
+			fprintf( fh, "Interpreted runs started at (samples [hits so far / compiled here?]):\n" );
+			for( u32 i = 0; i < num_entries && i < 12; ++i )
+			{
+				u32 hot_count = 0;
+				bool has_fragment = false;
+				Dynamo_DescribePc( entries[ i ].Pc, &hot_count, &has_fragment );
+
+				char prefix[ 48 ];
+				snprintf( prefix, sizeof( prefix ), "  %5u  [%4u %s]  ", (unsigned)entries[ i ].Count, (unsigned)hot_count, has_fragment ? "yes" : " no" );
+				WriteInstruction( fh, entries[ i ].Pc, prefix );
+				if( i < 4 )
+				{
+					for( u32 j = 1; j < 6; ++j )
+					{
+						WriteInstruction( fh, entries[ i ].Pc + j * 4, "                       " );
+					}
+				}
+			}
 		}
 
 		// Traces

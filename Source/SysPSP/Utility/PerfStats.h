@@ -54,6 +54,13 @@ namespace PerfStatsInternal
 	extern volatile u8	gStack[ kMaxDepth ];
 	extern volatile u32	gDepth;
 	extern u32			gCounters[ NUM_PERF_COUNTERS ];
+	extern volatile u32	gInterpEntry;		// PC where the current run of interpreted code began
+}
+
+// Note where interpretation resumes (after compiled code returns, or at the start of the CPU loop)
+inline void PerfStats_NoteInterpEntry( u32 pc )
+{
+	PerfStatsInternal::gInterpEntry = pc;
 }
 
 inline void PerfStats_Count( EPerfCounter counter )

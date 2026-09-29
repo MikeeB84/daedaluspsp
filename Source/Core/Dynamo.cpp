@@ -390,6 +390,7 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
 		{
 			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
+			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
 			while(stuff_to_do == 0)
 			{
 				CPU_EXECUTE_OP< TraceEnabled >();
@@ -645,6 +646,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 				DAEDALUS_PERF_SCOPE( PERF_CPU_DYNAREC );
 				p_fragment->Execute();
 			}
+			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
 
 			DYNAREC_PROFILE_ENTEREXIT( entry_address, gCPUState.CurrentPC, gCPUState.CPUControl[C0_COUNT]._u32 - entry_count );
 
