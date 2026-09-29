@@ -194,11 +194,15 @@ void CGraphicsPluginImpl::UpdateScreen()
 	if( current_origin != last_origin )
 	{
 		//printf( "Flip (%08x, %08x)\n", current_origin, last_origin );
-		gPerfStatsEnabled = gGlobalPreferences.DisplayFramerate;
+		PerfStats_SetEnabled( gGlobalPreferences.DisplayFramerate );
 		if( gGlobalPreferences.DisplayFramerate )
 		{
 			UpdateFramerate();
-			PerfStats_Update();
+			if( PerfStats_Update() )
+			{
+				const u32 tv_hz = FramerateLimiter_GetTvFrequencyHz();
+				PerfStats_LogSample( gCurrentFramerate, u32( FramerateLimiter_GetSync() * f32( tv_hz ) ), tv_hz );
+			}
 		}
 
 		const f32 Fsync = FramerateLimiter_GetSync();
@@ -224,8 +228,16 @@ void CGraphicsPluginImpl::UpdateScreen()
 				pspDebugScreenPrintf( "FPS[%#.1f] VB[%d/%d] Sync[%#.1f%%]   ", gCurrentFramerate, u32( Fsync * f32( FramerateLimiter_GetTvFrequencyHz() ) ), FramerateLimiter_GetTvFrequencyHz(), Fsync * 100.0f );
 				pspDebugScreenSetXY(0, 1);
 				pspDebugScreenPrintf( "CPU %2d%% GFX %2d%% AUD %2d%% GE %2d%% IDLE %2d%%   ",
-					PerfStats_GetPercent( PERF_CPU ), PerfStats_GetPercent( PERF_GFX ), PerfStats_GetPercent( PERF_AUDIO ),
-					PerfStats_GetPercent( PERF_GE_WAIT ), PerfStats_GetPercent( PERF_LIMITER ) );
+					(int)PerfStats_GetCpuPercent(), (int)PerfStats_GetGfxPercent(), (int)PerfStats_GetPercent( PERF_AUDIO ),
+					(int)PerfStats_GetPercent( PERF_GE_WAIT ), (int)PerfStats_GetPercent( PERF_LIMITER ) );
+				pspDebugScreenSetXY(0, 2);
+				pspDebugScreenPrintf( "CPU: INT %2d%% DYN %2d%% JIT %2d%%   ",
+					(int)PerfStats_GetPercent( PERF_CPU ), (int)PerfStats_GetPercent( PERF_CPU_DYNAREC ),
+					(int)PerfStats_GetPercent( PERF_CPU_COMPILE ) );
+				pspDebugScreenSetXY(0, 3);
+				pspDebugScreenPrintf( "GFX: DL %2d%% VTX %2d%% TEX %2d%% DRAW %2d%%   ",
+					(int)PerfStats_GetPercent( PERF_GFX ), (int)PerfStats_GetPercent( PERF_GFX_VTX ),
+					(int)PerfStats_GetPercent( PERF_GFX_TEX ), (int)PerfStats_GetPercent( PERF_GFX_DRAW ) );
 #endif
 			}
 			if( gGlobalPreferences.BatteryWarning )
@@ -276,6 +288,7 @@ void CGraphicsPluginImpl::RomClosed()
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "Finalising PSPGraphics");
 	#endif
+	PerfStats_Flush();
 	DLParser_Finalise();
 	CTextureCache::Destroy();
 	DestroyRenderer();

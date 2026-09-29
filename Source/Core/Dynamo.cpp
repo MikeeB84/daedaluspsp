@@ -47,6 +47,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Macros.h"
 #include "Utility/Profiler.h"
 #include "Debug/Synchroniser.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 #ifdef DAEDALUS_ENABLE_DYNAREC
 
@@ -498,6 +499,7 @@ void	CPU_DumpFragmentCache()
 //*****************************************************************************
 void CPU_CreateAndAddFragment()
 {
+	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );
 	// std::shared_ptr<CFragment> p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 	CFragment * p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 
@@ -592,7 +594,10 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 				change_core = true;
 			}
 
-			p_fragment->Execute();
+			{
+				DAEDALUS_PERF_SCOPE( PERF_CPU_DYNAREC );
+				p_fragment->Execute();
+			}
 
 			DYNAREC_PROFILE_ENTEREXIT( entry_address, gCPUState.CurrentPC, gCPUState.CPUControl[C0_COUNT]._u32 - entry_count );
 

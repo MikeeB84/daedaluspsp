@@ -7,86 +7,191 @@ of the License, or (at your option) any later version.
 
 #include "Base/Types.h"
 #include "SysPSP/Utility/PerfStats.h"
+#include "Core/ROM.h"
 
 #include <pspthreadman.h>
+#include <cstdio>
+#include <cstring>
+#include <string>
 
 bool gPerfStatsEnabled = false;
 
+namespace PerfStatsInternal
+{
+	volatile u8		gStack[ kMaxDepth ];
+	volatile u32	gDepth = 0;
+}
+
+using namespace PerfStatsInternal;
+
 namespace
 {
-	const u32		kMaxDepth = 8;
+	const u32		kAlarmPeriodMicroseconds = 500;		// ~2000 samples per second
 	const u32		kSampleMicroseconds = 1000000;
 
-	EPerfCategory	gStack[ kMaxDepth ];
-	u32				gDepth = 0;
-	u32				gLastStamp = 0;
+	volatile u32	gSampleCount[ NUM_PERF_CATEGORIES ] = {};
+	SceUID			gAlarm = -1;
 	u32				gSampleStart = 0;
-	u32				gAccum[ NUM_PERF_CATEGORIES ] = {};
 	u32				gPercent[ NUM_PERF_CATEGORIES ] = {};
 
-	inline EPerfCategory Current()
+	// Runs in interrupt context: only read the stack and bump a counter
+	SceUInt PerfAlarmHandler( void * )
 	{
-		if( gDepth == 0 ) return PERF_CPU;
-		return gStack[ (gDepth <= kMaxDepth ? gDepth : kMaxDepth) - 1 ];
+		u32 depth = gDepth;
+		u32 category = PERF_CPU;
+		if( depth > 0 )
+		{
+			category = gStack[ (depth <= kMaxDepth ? depth : kMaxDepth) - 1 ];
+		}
+		if( category < NUM_PERF_CATEGORIES )
+		{
+			gSampleCount[ category ] = gSampleCount[ category ] + 1;
+		}
+		return kAlarmPeriodMicroseconds;
 	}
 
-	// Charge the time since the last stamp to the category currently running
-	inline void Charge()
+	void ResetCounts()
 	{
-		u32 now = sceKernelGetSystemTimeLow();
-		gAccum[ Current() ] += now - gLastStamp;
-		gLastStamp = now;
+		for( u32 i = 0; i < NUM_PERF_CATEGORIES; ++i ) gSampleCount[ i ] = 0;
 	}
 }
 
-void PerfStats_Enter( EPerfCategory category )
+void PerfStats_SetEnabled( bool enabled )
 {
-	Charge();
-	if( gDepth < kMaxDepth )
+	if( enabled == gPerfStatsEnabled )
 	{
-		gStack[ gDepth ] = category;
+		return;
 	}
-	++gDepth;
-}
 
-void PerfStats_Exit()
-{
-	Charge();
-	if( gDepth > 0 )
+	gPerfStatsEnabled = enabled;
+	if( enabled )
 	{
-		--gDepth;
+		ResetCounts();
+		gSampleStart = sceKernelGetSystemTimeLow();
+		gAlarm = sceKernelSetAlarm( kAlarmPeriodMicroseconds, PerfAlarmHandler, nullptr );
+	}
+	else
+	{
+		if( gAlarm >= 0 )
+		{
+			sceKernelCancelAlarm( gAlarm );
+			gAlarm = -1;
+		}
+		// Scopes opened while enabled still close through their own flag, so
+		// the stack is balanced. Reset anyway in case of an early exit path.
+		gDepth = 0;
 	}
 }
 
 bool PerfStats_Update()
 {
-	Charge();
-
-	u32 now = gLastStamp;
-	u32 elapsed = now - gSampleStart;
-	if( gSampleStart == 0 || elapsed > kSampleMicroseconds * 4 )
+	if( !gPerfStatsEnabled )
 	{
-		// First call, or stats were switched off for a while: start a fresh sample
-		for( u32 i = 0; i < NUM_PERF_CATEGORIES; ++i ) gAccum[ i ] = 0;
-		gSampleStart = now;
 		return false;
 	}
 
-	if( elapsed < kSampleMicroseconds )
+	u32 now = sceKernelGetSystemTimeLow();
+	if( now - gSampleStart < kSampleMicroseconds )
 	{
 		return false;
+	}
+	gSampleStart = now;
+
+	u32 counts[ NUM_PERF_CATEGORIES ];
+	u32 total = 0;
+	for( u32 i = 0; i < NUM_PERF_CATEGORIES; ++i )
+	{
+		counts[ i ] = gSampleCount[ i ];
+		gSampleCount[ i ] = 0;
+		total += counts[ i ];
 	}
 
 	for( u32 i = 0; i < NUM_PERF_CATEGORIES; ++i )
 	{
-		gPercent[ i ] = (u32)(((u64)gAccum[ i ] * 100 + elapsed / 2) / elapsed);
-		gAccum[ i ] = 0;
+		gPercent[ i ] = total ? (counts[ i ] * 100 + total / 2) / total : 0;
 	}
-	gSampleStart = now;
 	return true;
 }
 
 u32 PerfStats_GetPercent( EPerfCategory category )
 {
 	return gPercent[ category ];
+}
+
+u32 PerfStats_GetCpuPercent()
+{
+	return gPercent[ PERF_CPU ] + gPercent[ PERF_CPU_DYNAREC ] + gPercent[ PERF_CPU_COMPILE ];
+}
+
+u32 PerfStats_GetGfxPercent()
+{
+	return gPercent[ PERF_GFX ] + gPercent[ PERF_GFX_VTX ] + gPercent[ PERF_GFX_TEX ] + gPercent[ PERF_GFX_DRAW ];
+}
+
+namespace
+{
+	const u32		kLogBufferSize = 4096;
+	const u32		kFlushEverySamples = 10;
+
+	char			gLogBuffer[ kLogBufferSize ];
+	u32				gLogLength = 0;
+	u32				gSamplesSinceFlush = 0;
+	std::string		gLoggedGame;
+	bool			gLoggedHeader = false;
+
+	void Append( const char * line )
+	{
+		u32 len = strlen( line );
+		if( gLogLength + len >= kLogBufferSize )
+		{
+			PerfStats_Flush();
+		}
+		if( len < kLogBufferSize )
+		{
+			memcpy( gLogBuffer + gLogLength, line, len );
+			gLogLength += len;
+		}
+	}
+}
+
+void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
+{
+	char line[ 200 ];
+
+	if( !gLoggedHeader || gLoggedGame != g_ROM.settings.GameName )
+	{
+		gLoggedHeader = true;
+		gLoggedGame = g_ROM.settings.GameName;
+		snprintf( line, sizeof( line ), "# %s\n# fps vb/hz | cpu: int dyn jit | gfx: dl vtx tex draw | aud ge idle\n", gLoggedGame.c_str() );
+		Append( line );
+	}
+
+	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u | %u %u %u %u | %u %u %u\n",
+		fps, (unsigned)vbls_per_second, (unsigned)tv_hz,
+		(unsigned)gPercent[ PERF_CPU ], (unsigned)gPercent[ PERF_CPU_DYNAREC ], (unsigned)gPercent[ PERF_CPU_COMPILE ],
+		(unsigned)gPercent[ PERF_GFX ], (unsigned)gPercent[ PERF_GFX_VTX ], (unsigned)gPercent[ PERF_GFX_TEX ], (unsigned)gPercent[ PERF_GFX_DRAW ],
+		(unsigned)gPercent[ PERF_AUDIO ], (unsigned)gPercent[ PERF_GE_WAIT ], (unsigned)gPercent[ PERF_LIMITER ] );
+	Append( line );
+
+	if( ++gSamplesSinceFlush >= kFlushEverySamples )
+	{
+		PerfStats_Flush();
+	}
+}
+
+void PerfStats_Flush()
+{
+	gSamplesSinceFlush = 0;
+	if( gLogLength == 0 )
+	{
+		return;
+	}
+
+	FILE * fh = fopen( "perf.txt", "a" );
+	if( fh != nullptr )
+	{
+		fwrite( gLogBuffer, 1, gLogLength, fh );
+		fclose( fh );
+	}
+	gLogLength = 0;
 }

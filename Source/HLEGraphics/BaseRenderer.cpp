@@ -43,6 +43,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Utility/FastRand.h"
 
 #include "SysPSP/Math/Math.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 // Vertex allocation.
 // AllocVerts/FreeVerts:
@@ -689,6 +690,7 @@ namespace
 //*****************************************************************************
 void BaseRenderer::PrepareTrisClipped( TempVerts * temp_verts ) const
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	#ifdef DAEDALUS_ENABLE_PROFILING
 	DAEDALUS_PROFILE( "BaseRenderer::PrepareTrisClipped" );
 #endif
@@ -820,6 +822,7 @@ void BaseRenderer::PrepareTrisClipped( TempVerts * temp_verts ) const
 //*****************************************************************************
 void BaseRenderer::PrepareTrisUnclipped( TempVerts * temp_verts ) const
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_PROFILE( "BaseRenderer::PrepareTrisUnclipped" );
 	DAEDALUS_ASSERT( mNumIndices > 0, "The number of indices should have been checked" );
@@ -925,6 +928,7 @@ glm::vec3 BaseRenderer::LightPointVert( const glm::vec4 & w ) const
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	UpdateWorldProject();
 	alignas(DATA_ALIGN)  const glm::mat4 & mat_world_project = mWorldProject;
 	alignas(DATA_ALIGN) const glm::mat4 & mat_world = mModelViewStack[mModelViewTop];
@@ -1061,6 +1065,7 @@ void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfoConker(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	alignas(DATA_ALIGN)    const glm::mat4 & mat_project = mProjectionMat;
 	alignas(DATA_ALIGN)	const glm::mat4 & mat_world = mModelViewStack[mModelViewTop];
 
@@ -1200,6 +1205,7 @@ void BaseRenderer::SetNewVertexInfoConker(u32 address, u32 v0, u32 n)
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfoDKR(u32 address, u32 v0, u32 n, bool billboard)
 {	
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	alignas(DATA_ALIGN) const glm::mat4 & mat_world_project = mModelViewStack[mDKRMatIdx];
 
 	DL_PF( "    Ambient color RGB[%f][%f][%f] Texture scale X[%f] Texture scale Y[%f]", mTnL.Lights[mTnL.NumLights].Colour.x, mTnL.Lights[mTnL.NumLights].Colour.y, mTnL.Lights[mTnL.NumLights].Colour.z, mTnL.TextureScaleX, mTnL.TextureScaleY);
@@ -1310,6 +1316,7 @@ void BaseRenderer::SetNewVertexInfoDKR(u32 address, u32 v0, u32 n, bool billboar
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfoPD(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	alignas(DATA_ALIGN) const glm::mat4 & mat_world = mModelViewStack[mModelViewTop];
 	alignas(DATA_ALIGN) const glm::mat4 & mat_project = mProjectionMat;
 
@@ -1505,6 +1512,7 @@ void BaseRenderer::ResetMatrices(u32 size)
 //*****************************************************************************
 void BaseRenderer::UpdateTileSnapshots( u32 tile_idx )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_TEX );
 	UpdateTileSnapshot( 0, tile_idx );
 
 	if ( g_ROM.LOAD_T1_HACK & !gRDPOtherMode.text_lod )
@@ -1728,6 +1736,7 @@ void BaseRenderer::PrepareTexRectUVs(TexCoord * puv0, TexCoord * puv1)
 //*****************************************************************************
 std::shared_ptr<CNativeTexture> BaseRenderer::LoadTextureDirectly( const TextureInfo & ti )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_TEX );
 	std::shared_ptr<CNativeTexture> texture = CTextureCache::Get()->GetOrCreateTexture( ti );
 	if (texture)
 	{
