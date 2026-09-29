@@ -48,6 +48,11 @@ enum EPerfCounter
 
 extern bool gPerfStatsEnabled;
 
+// Entry address of the compiled fragment currently running. Fragments compiled while
+// stats are enabled store their entry address here as their first instruction, so the
+// sampler can say which compiled code the DYN time is spent in.
+extern volatile u32 gPerfFragmentEntry;
+
 namespace PerfStatsInternal
 {
 	const u32 kMaxDepth = 16;
@@ -83,6 +88,9 @@ void	PerfStats_TraceEvent( ETraceEvent event, u32 start_address, u32 pc, u32 stu
 
 // Record the instructions of an aborted trace (first time per start address)
 void	PerfStats_CaptureAbortedTrace( u32 start_address, const u32 * addresses, u32 count );
+
+// Record the instructions of a newly compiled fragment, for listing the hottest ones
+void	PerfStats_NoteFragment( u32 entry_address, const u32 * addresses, u32 count, u32 output_bytes );
 
 // Why the whole fragment cache was thrown away
 enum EFlushReason

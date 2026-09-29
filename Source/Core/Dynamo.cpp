@@ -564,11 +564,25 @@ void	CPU_DumpFragmentCache()
 void CPU_CreateAndAddFragment()
 {
 	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );
+
+	// Keep the trace's instruction addresses for the profiler (CreateFragment clears the trace)
+	static u32 trace_addresses[ 1600 ];		// MAX_TRACE_LENGTH is 1500
+	u32 trace_count = 0;
+	if( gPerfStatsEnabled )
+	{
+		trace_count = std::min< u32 >( gTraceRecorder.GetTraceLength(), 1600 );
+		for( u32 i = 0; i < trace_count; ++i ) trace_addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
+	}
+
 	// std::shared_ptr<CFragment> p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 	CFragment * p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 
 	if( p_fragment != nullptr )
 	{
+		if( trace_count > 0 )
+		{
+			PerfStats_NoteFragment( p_fragment->GetEntryAddress(), trace_addresses, trace_count, p_fragment->GetOutputLength() );
+		}
 		PerfStats_Count( PERF_COUNT_FRAGMENT );
 		PerfStats_TraceEvent( TRACE_EVENT_COMPILED, p_fragment->GetEntryAddress(), p_fragment->GetEntryAddress(), 0, 0 );
 		gHotTraceCountMap.Erase( p_fragment->GetEntryAddress() );

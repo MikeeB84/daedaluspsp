@@ -20,6 +20,7 @@ of the License, or (at your option) any later version.
 #include <string>
 
 bool gPerfStatsEnabled = false;
+volatile u32 gPerfFragmentEntry = 0;
 
 namespace PerfStatsInternal
 {
@@ -48,6 +49,35 @@ namespace
 	SPcSample		gInterpPcs[ kNumPcSlots ];
 	SPcSample		gInterpEntries[ kNumPcSlots ];
 	volatile u32	gInterpPcsDropped = 0;
+	SPcSample		gFragmentSamples[ kNumPcSlots ];
+
+	// Instructions of compiled fragments, stored as runs of consecutive addresses
+	const u32		kNumFragmentInfos = 4096;
+	const u32		kNumFragmentRuns = 16384;
+	struct SFragmentInfo { u32 Entry; u16 FirstRun; u16 NumRuns; u16 NumOps; u16 OutputBytes; };
+	struct SFragmentRun { u32 Start; u32 Length; };
+	SFragmentInfo	gFragmentInfos[ kNumFragmentInfos ];
+	SFragmentRun	gFragmentRuns[ kNumFragmentRuns ];
+	u32				gNumFragmentInfos = 0;
+	u32				gNumFragmentRuns = 0;
+
+	SFragmentInfo * FindFragmentInfo( u32 entry, bool create )
+	{
+		u32 idx = ((entry >> 2) * 2654435761u) >> 20;		// 12 bits
+		for( u32 i = 0; i < kNumFragmentInfos; ++i )
+		{
+			SFragmentInfo & info = gFragmentInfos[ (idx + i) & (kNumFragmentInfos - 1) ];
+			if( info.Entry == entry ) return &info;
+			if( info.Entry == 0 )
+			{
+				if( !create || gNumFragmentInfos >= kNumFragmentInfos * 3 / 4 ) return nullptr;
+				gNumFragmentInfos++;
+				info.Entry = entry;
+				return &info;
+			}
+		}
+		return nullptr;
+	}
 
 	bool RecordPc( SPcSample * table, u32 pc )
 	{
@@ -90,6 +120,10 @@ namespace
 		if( category == PERF_CPU_INTERP )
 		{
 			RecordInterpPc( gCPUState.CurrentPC );
+		}
+		else if( category == PERF_CPU_DYNAREC )
+		{
+			RecordPc( gFragmentSamples, gPerfFragmentEntry );
 		}
 		return kAlarmPeriodMicroseconds;
 	}
@@ -276,6 +310,52 @@ void PerfStats_CaptureAbortedTrace( u32 start_address, const u32 * addresses, u3
 	memcpy( capture.Addresses, addresses, capture.Count * sizeof( u32 ) );
 }
 
+void PerfStats_NoteFragment( u32 entry_address, const u32 * addresses, u32 count, u32 output_bytes )
+{
+	if( count == 0 ) return;
+
+	// Count the runs first so a fragment is either stored whole or not at all
+	u32 num_runs = 1;
+	for( u32 i = 1; i < count; ++i )
+	{
+		if( addresses[ i ] != addresses[ i - 1 ] + 4 ) num_runs++;
+	}
+	if( gNumFragmentRuns + num_runs > kNumFragmentRuns || gNumFragmentInfos >= kNumFragmentInfos * 3 / 4 )
+	{
+		// Out of space: start again (fragments recompiled later are recorded afresh)
+		memset( gFragmentInfos, 0, sizeof( gFragmentInfos ) );
+		gNumFragmentInfos = 0;
+		gNumFragmentRuns = 0;
+		if( num_runs > kNumFragmentRuns ) return;
+	}
+
+	SFragmentInfo * info = FindFragmentInfo( entry_address, true );
+	if( info == nullptr ) return;
+
+	info->FirstRun = (u16)gNumFragmentRuns;
+	info->NumRuns = (u16)num_runs;
+	info->NumOps = (u16)std::min< u32 >( count, 0xFFFF );
+	info->OutputBytes = (u16)std::min< u32 >( output_bytes, 0xFFFF );
+
+	SFragmentRun * run = &gFragmentRuns[ gNumFragmentRuns ];
+	run->Start = addresses[ 0 ];
+	run->Length = 1;
+	for( u32 i = 1; i < count; ++i )
+	{
+		if( addresses[ i ] == addresses[ i - 1 ] + 4 )
+		{
+			run->Length++;
+		}
+		else
+		{
+			++run;
+			run->Start = addresses[ i ];
+			run->Length = 1;
+		}
+	}
+	gNumFragmentRuns += num_runs;
+}
+
 void PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length )
 {
 	if( reason != FLUSH_INVALIDATE_REQUEST )
@@ -404,6 +484,54 @@ namespace
 						WriteInstruction( fh, entries[ i ].Pc + j * 4, "                       " );
 					}
 				}
+			}
+		}
+
+		// Compiled code hotspots, by fragment
+		{
+			static SPcSample frags[ kNumPcSlots ];
+			u32 num_frags = 0;
+			u32 frag_total = 0;
+			for( u32 i = 0; i < kNumPcSlots; ++i )
+			{
+				if( gFragmentSamples[ i ].Count )
+				{
+					frags[ num_frags++ ] = gFragmentSamples[ i ];
+					frag_total += gFragmentSamples[ i ].Count;
+				}
+				gFragmentSamples[ i ].Count = 0;
+			}
+			std::sort( frags, frags + num_frags, []( const SPcSample & a, const SPcSample & b ) { return a.Count > b.Count; } );
+			fprintf( fh, "Compiled code samples: %u in %u fragments\n", (unsigned)frag_total, (unsigned)num_frags );
+			fprintf( fh, "  samples  fragment  N64 ops  PSP bytes  bytes/op\n" );
+			for( u32 i = 0; i < num_frags && i < 24; ++i )
+			{
+				const SFragmentInfo * info = FindFragmentInfo( frags[ i ].Pc, false );
+				if( info != nullptr && info->NumOps > 0 )
+				{
+					fprintf( fh, "  %5u    %08x  %5u    %6u     %5.1f\n", (unsigned)frags[ i ].Count, (unsigned)frags[ i ].Pc,
+						(unsigned)info->NumOps, (unsigned)info->OutputBytes, (float)info->OutputBytes / info->NumOps );
+				}
+				else
+				{
+					fprintf( fh, "  %5u    %08x  (compiled before stats were enabled, or an OS function)\n", (unsigned)frags[ i ].Count, (unsigned)frags[ i ].Pc );
+				}
+			}
+			for( u32 i = 0; i < num_frags && i < 8; ++i )
+			{
+				const SFragmentInfo * info = FindFragmentInfo( frags[ i ].Pc, false );
+				if( info == nullptr || info->NumOps == 0 ) continue;
+				fprintf( fh, "Fragment %08x (%u samples, %u ops):\n", (unsigned)frags[ i ].Pc, (unsigned)frags[ i ].Count, (unsigned)info->NumOps );
+				u32 printed = 0;
+				for( u32 r = 0; r < info->NumRuns && printed < 64; ++r )
+				{
+					const SFragmentRun & run = gFragmentRuns[ info->FirstRun + r ];
+					for( u32 j = 0; j < run.Length && printed < 64; ++j, ++printed )
+					{
+						WriteInstruction( fh, run.Start + j * 4, "      " );
+					}
+				}
+				if( printed < info->NumOps ) fprintf( fh, "      ... %u more\n", (unsigned)(info->NumOps - printed) );
 			}
 		}
 
