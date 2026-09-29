@@ -101,9 +101,16 @@ bool IROMFileMemory::IsAvailable()
 
 void * IROMFileMemory::Alloc( u32 size )
 {
-	std::cout << "Allocating Memory" << std::endl;
 #ifdef DAEDALUS_PSP
-	return mRomMemoryHeap->Alloc( size );
+	// Prefer the dedicated heap; if it is too small for this request (e.g. a
+	// ROM larger than the heap in ROM Buffer mode) try the general heap.
+	// Callers must still handle a null result.
+	void * ptr = mRomMemoryHeap->Alloc( size );
+	if( ptr == nullptr )
+	{
+		ptr = malloc( size );
+	}
+	return ptr;
 #else
 	return malloc( size );
 #endif
@@ -113,9 +120,18 @@ void * IROMFileMemory::Alloc( u32 size )
 void  IROMFileMemory::Free(void * ptr)
 {
 #ifdef DAEDALUS_PSP
-	mRomMemoryHeap->Free( ptr );
+	if( ptr == nullptr )
+		return;
+
+	if( mRomMemoryHeap->IsFromHeap( ptr ) )
+	{
+		mRomMemoryHeap->Free( ptr );
+	}
+	else
+	{
+		free( ptr );
+	}
 #else
-std::cout << "Freeing Memory" << std::endl;
 	free( ptr );
 #endif
 }
