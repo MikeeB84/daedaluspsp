@@ -17,6 +17,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 
+#include <cstring>
 #include "Base/Types.h"
 #include "RomFile/RomFileUncompressed.h"
 #include <iostream>
@@ -129,16 +130,27 @@ bool	ROMFileUncompressed::ReadChunk( u32 offset, u8 * p_dst, u32 length )
     #ifdef DAEDALUS_ENABLE_ASSERTS
     // DAEDALUS_ASSERT( mFH != NULL, "Reading data when Open failed?" );
     #endif
-    // Try and read in data - reset to the specified offset
+    // Try and read in data - reset to the specified offset.
+    // Clear any error state first: a short read at the end of the file sets
+    // failbit/eofbit, and then every later seek would fail too, so all further
+    // reads from the ROM would fail.
+    mFH.clear();
     mFH.seekg(offset, std::ios::beg);
     if (!mFH) {
         std::cerr << "Failed to seek to offset " << offset << std::endl;
+        mFH.clear();
+        memset(p_dst, 0, length);
         return false;
     }
 
     mFH.read(reinterpret_cast<char*>(p_dst), length);
-    if (mFH.gcount() != length) {
-        std::cerr << "Failed to read expected number of bytes from ReadChunk. Read " << mFH.gcount() << " out of " << length << std::endl;
+    const u32 bytes_read = static_cast<u32>(mFH.gcount());
+    if (bytes_read != length) {
+        std::cerr << "Failed to read expected number of bytes from ReadChunk. Read " << bytes_read << " out of " << length << std::endl;
+        mFH.clear();
+        // Past the end of the file: return zeros rather than whatever was in the buffer
+        memset(p_dst + bytes_read, 0, length - bytes_read);
+        CorrectSwap(p_dst, bytes_read & ~3u);
         return false;
     }
 
