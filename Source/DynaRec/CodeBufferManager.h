@@ -20,8 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DYNAREC_CODEBUFFERMANAGER_H_
 #define DYNAREC_CODEBUFFERMANAGER_H_
 
-#include "Base/Types.h"
-#include <memory> 
+#include "Utility/DaedalusTypes.h"
 
 class CCodeGenerator;
 
@@ -33,11 +32,11 @@ public:
 	virtual void					Reset() = 0;
 	virtual	void					Finalise() = 0;
 
-	virtual	std::shared_ptr<CCodeGenerator>		StartNewBlock() = 0;
+	virtual	CCodeGenerator *		StartNewBlock() = 0;
 	virtual	u32						FinaliseCurrentBlock() = 0;
 
 public:
-	static	std::shared_ptr<CCodeBufferManager>	Create();
+	static	CCodeBufferManager *	Create();
 };
 
 

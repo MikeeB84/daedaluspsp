@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef CORE_R4300INSTRUCTION_H_
 #define CORE_R4300INSTRUCTION_H_
 
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 // Through various tests, it seems the compiler generates much better code by
 // passing the opcode as a primitive datatype (as it can stick the value directly
@@ -28,10 +28,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // create a temporary to be able to pull the various fields from the opcode, but
 // the compiler is clever enough to optimiste this overhead away.
 
-#define R4300_CALL_SIGNATURE	u32	op_code_bits [[maybe_unused]]
+#define R4300_CALL_SIGNATURE	u32	op_code_bits 
 #define R4300_CALL_ARGUMENTS	op_code_bits
 
-typedef void ( *CPU_Instruction )( R4300_CALL_SIGNATURE );
+typedef void (R4300_CALL_TYPE *CPU_Instruction )( R4300_CALL_SIGNATURE );
 
 
 #endif // CORE_R4300INSTRUCTION_H_

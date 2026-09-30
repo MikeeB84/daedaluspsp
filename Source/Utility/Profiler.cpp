@@ -1,27 +1,22 @@
 // Profiler.cpp: implementation of the CProfiler class.
 //
 //////////////////////////////////////////////////////////////////////
+
+#include "stdafx.h"
+#include "Profiler.h"
+
 #ifdef DAEDALUS_ENABLE_PROFILING
+
+#include "Debug/DBGConsole.h"
+#include "Utility/Timing.h"
+#include "Utility/Hash.h"
+
 #include <vector>
 #include <string>
 #include <stack>
 #include <set>
 #include <map>
 #include <algorithm>
-#include <string.h>
-
-#include "Base/Types.h"
-
-
-
-
-#include "Debug/DBGConsole.h"
-#include "Utility/Hash.h"
-#include "Utility/Profiler.h"
-#include "System/Timing/Timing.h"
-
-
-
 
 static u64 GetNow()
 {
@@ -33,7 +28,7 @@ static u64 GetNow()
 class CProfileItem
 {
 	public:
-	using ItemVector = std::vector< CProfileItem *>;
+		typedef std::vector< CProfileItem * > ItemVector;
 
 		CProfileItem( const char * p_str )
 			:	mName( p_str )
@@ -79,7 +74,7 @@ public:
 		u32 i;
 		for( i = 0; i < mItems.size() && i < rhs.mItems.size(); ++i )
 		{
-			s32		compare = strcasecmp( mItems[ i ]->GetName(), rhs.mItems[ i ]->GetName() );
+			s32		compare = _strcmpi( mItems[ i ]->GetName(), rhs.mItems[ i ]->GetName() );
 			if( compare != 0 )
 			{
 				return compare;
@@ -131,14 +126,13 @@ class CProfilerImpl
 		CProfileCallstack *		GetActiveStats();
 
 	private:
-	using ProfileItemList = std::vector< CProfileItem *>;
-	using ProfileItemStack = std::stack <CProfileItem *>;
+		typedef std::vector< CProfileItem * >			ProfileItemList;
+		typedef std::stack< CProfileItem * >			ProfileItemStack;
 
 		std::vector< CProfileItem * >	mActiveItems;
 		std::vector< CProfileCallstack * >	mActiveCallstacks;
 
-	using CallstackStatsMap = std::map< u32, CProfileCallstack *>;
-
+		typedef std::map< u32, CProfileCallstack * >	CallstackStatsMap;
 		CallstackStatsMap		mCallstackStatsMap;
 
 		f32						mFrequencyInv;
@@ -283,7 +277,7 @@ void CProfilerImpl::Update()
 		}
 
 		char line[ 1024 ];
-		snprintf( line, sizeof(line), "\033[2K%x%*s%s" , depth, depth, "", callstack->GetBack()->GetName() );
+		sprintf( line, "\033[2K%x%*s%s" , depth, depth, "", callstack->GetBack()->GetName() );
 		Pad( line, 54 );
 		printf( "%s %6.2f %6.1f%% %6.1f%% %5d%s\n", line, (f32)total_us / 1000.0f, percent_parent_time, percent_total_time, hit_count, TERMINAL_ERASE_TO_EOL );
 		//DBGConsole_Msg( 0, "%*s %s %d,%03dms (%d calls)", depth, "", p_item->GetName(), total_us / 1000, total_us % 1000, hit_count );
@@ -416,9 +410,9 @@ CProfiler::~CProfiler()
 
 template<> bool CSingleton< CProfiler >::Create()
 {
-	DAEDALUS_ASSERT_Q(mpInstance == nullptr);
+	DAEDALUS_ASSERT_Q(mpInstance == NULL);
 
-	mpInstance = std::make_shared<CProfiler>();
+	mpInstance = new CProfiler();
 
 	return true;
 }

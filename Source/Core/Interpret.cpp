@@ -18,25 +18,24 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 // Stuff to handle Processor
+#include "stdafx.h"
 
-#include "Base/Types.h"
+#include "CPU.h"
+#include "Registers.h"					// For REG_?? defines
+#include "Memory.h"
+#include "Interrupt.h"
+#include "ROMBuffer.h"
+#include "R4300.h"
+#include "Interpret.h"
 
-#include "Core/CPU.h"
-#include "Debug/Registers.h"					// For REG_?? defines
-#include "Core/Memory.h"
-#include "Core/Interpret.h"
-#include "Core/Interrupt.h"
-#include "RomFile/ROMBuffer.h"
-#include "Core/R4300.h"
-#include "Interface/ConfigOptions.h"
+#include "Config/ConfigOptions.h"
 #include "Debug/DBGConsole.h"
 #include "Debug/DebugLog.h"
 #include "OSHLE/patch.h"				// GetCorrectOp
-#include "Ultra/ultra_R4300.h"
-#include "Base/Macros.h"
+#include "OSHLE/ultra_R4300.h"
+#include "Utility/Macros.h"
 #include "Utility/Profiler.h"
-#include "Debug/Synchroniser.h"
-#include "SysPSP/Utility/PerfStats.h"
+#include "Utility/Synchroniser.h"
 
 //*****************************************************************************
 //	Execute a single MIPS op. The conditionals for the templated arguments
@@ -45,9 +44,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //	TranslateOp:	Use this to translate breakpoints/patches to original op
 //					before execution.
 //*****************************************************************************
-template< bool TranslateOp > inline void CPU_EXECUTE_OP()
+template< bool TranslateOp > DAEDALUS_FORCEINLINE void CPU_EXECUTE_OP()
 {
-	u8 * p_Instruction = 0;
+	u8 * p_Instruction {};
 
 	CPU_FETCH_INSTRUCTION( p_Instruction, gCPUState.CurrentPC );
 	OpCode op_code = *(OpCode*)p_Instruction;
@@ -125,6 +124,8 @@ template< bool TranslateOp > inline void CPU_EXECUTE_OP()
 		// Normal operation - just increment the PC
 		INCREMENT_PC();
 		break;
+	default:
+		NODEFAULT;
 	}
 }
 
@@ -143,14 +144,11 @@ void CPU_Go()
 		// Keep executing ops as long as there's nothing to do
 		//
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
+		while(stuff_to_do == 0)
 		{
-			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
-			while(stuff_to_do == 0)
-			{
-				CPU_EXECUTE_OP< false >();
+			CPU_EXECUTE_OP< false >();
 
-				stuff_to_do = gCPUState.GetStuffToDo();
-			}
+			stuff_to_do = gCPUState.GetStuffToDo();
 		}
 
 		if (CPU_CheckStuffToDo())

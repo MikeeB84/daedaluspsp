@@ -17,23 +17,22 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include "stdafx.h"
+#include "ColourValue.h"
 
-#include "Base/Types.h"
-
-#include "Graphics/ColourValue.h"
-#include "Utility/MathUtil.h"
-
-#include <glm/glm.hpp>
+#include "Math/MathUtil.h"
+#include "Math/Vector4.h"
 
 //
 //ToDo: Needs work profiling testing and find faster VFPU/CPU implemtations
 //
-const glm::vec4 __attribute__((aligned(16))) SCALE( 255.0f, 255.0f, 255.0f, 255.0f );
+#ifdef DAEDALUS_PSP
+const v4 __attribute__((aligned(16))) SCALE( 255.0f, 255.0f, 255.0f, 255.0f );
 
 // Around 354,000 ticks/million - faster than the CPU version
-inline u32 Vector2ColourClampedVFPU(const glm::vec4 * col_in)
+inline u32 Vector2ColourClampedVFPU(const v4 * col_in)
 {
-	u32		out_ints[4];
+	u32		out_ints[4] {};
 
 	__asm__ volatile (
 
@@ -53,46 +52,47 @@ inline u32 Vector2ColourClampedVFPU(const glm::vec4 * col_in)
 	return c32::Make( out_ints[0], out_ints[1], out_ints[2], out_ints[3] );
 }
 
-#include <algorithm>
+#endif // DAEDALUS_PSP
 
 // Around 463,000 ticks/million
-inline u32 Vector2ColourClampedCPU( const glm::vec4 * col_in )
+inline u32 Vector2ColourClampedCPU( const v4 * col_in )
 {
-    u8 r = clamp_f32_to_u8(col_in->x * 255.0f);
-    u8 g = clamp_f32_to_u8(col_in->y * 255.0f);
-    u8 b = clamp_f32_to_u8(col_in->z * 255.0f);
-    u8 a = clamp_f32_to_u8(col_in->w * 255.0f);
+	u8 r = u8( Clamp<s32>( s32(col_in->x * 255.0f), 0, 255 ) );
+	u8 g = u8( Clamp<s32>( s32(col_in->y * 255.0f), 0, 255 ) );
+	u8 b = u8( Clamp<s32>( s32(col_in->z * 255.0f), 0, 255 ) );
+	u8 a = u8( Clamp<s32>( s32(col_in->w * 255.0f), 0, 255 ) );
 
 	return c32::Make( r, g, b, a );
 }
 
-inline u32 Vector2ColourClamped( const glm::vec4 & colour )
+inline u32 Vector2ColourClamped( const v4 & colour )
 {
 	//This is faster than the CPU Version
+#ifdef DAEDALUS_PSP
 	return Vector2ColourClampedVFPU( &colour );
+#else
+	return Vector2ColourClampedCPU( &colour );
+#endif
 }
 
 inline u8 AddComponent( u8 a, u8 b )
 {
-	int sum = static_cast<int>(a) + static_cast<int>(b);
-	return static_cast<u8>(sum > 255 ? 255 : sum);
+	return u8( Clamp< s32 >( s32( a ) + s32( b ), 0, 255 ) );
 }
 
 inline u8 SubComponent( u8 a, u8 b )
 {
-	int diff = static_cast<int>(a) - static_cast<int>(b);
-	return static_cast<u8>(diff < 0 ? 0 : diff);
+	return u8( Clamp< s32 >( s32( a ) - s32( b ), 0, 255 ) );
 }
 
 inline u8 ModulateComponent( u8 a, u8 b )
 {
-	return u8((u32(a) * u32(b) + 127) / 255);
+	return u8( ( u32( a ) * u32( b ) ) >> 8 );		// >> 8 to return to 0..255
 }
 
 inline u8 InterpolateComponent( u8 a, u8 b, float factor )
 {
-    u32 f = static_cast<u32>(factor * 256.0f); // fixed-point 8.8
-    return static_cast<u8>((a * (256 - f) + b * f) >> 8);
+	return u8(float(a) + (float(b) - float(a)) * factor);
 }
 
 
@@ -108,14 +108,14 @@ const c32 c32::Orange( 255,165,0,255 );
 const c32 c32::Purple( 160,32,240,255 );
 const c32 c32::Grey( 190,190,190, 255 );
 
-c32::c32( const glm::vec4 & colour )
+c32::c32( const v4 & colour )
 :	mColour( Vector2ColourClamped( colour ) )
 {
 }
 
-glm::vec4	c32::GetColourV4() const
+v4	c32::GetColourV4() const
 {
-	return glm::vec4( GetR() / 255.0f, GetG() / 255.0f, GetB() / 255.0f, GetA() / 255.0f );
+	return v4( GetR() / 255.0f, GetG() / 255.0f, GetB() / 255.0f, GetA() / 255.0f );
 }
 
 c32	c32::Add( c32 colour ) const
@@ -225,17 +225,17 @@ c32	c32::Interpolate( c32 colour, c32 factor ) const
 	float	factor_b( factor.GetB() / 255.0f );
 	float	factor_a( factor.GetA() / 255.0f );
 
-	u8 r = InterpolateComponent( GetR(), colour.GetR(), factor_r );
-	u8 g = InterpolateComponent( GetG(), colour.GetG(), factor_g );
-	u8 a = InterpolateComponent( GetA(), colour.GetA(), factor_a );
-	u8 b = InterpolateComponent( GetB(), colour.GetB(), factor_b );
+	u8 r {InterpolateComponent( GetR(), colour.GetR(), factor_r )};
+	u8 g {InterpolateComponent( GetG(), colour.GetG(), factor_g )};
+	u8 b {InterpolateComponent( GetB(), colour.GetB(), factor_b )};
+	u8 a {InterpolateComponent( GetA(), colour.GetA(), factor_a )};
 
 	return c32( r, g, b, a );
 }
 
 c32 c32::ReplicateAlpha() const
 {
-	u8 a = GetA();
+	u8 a {GetA()};
 
 	return c32( a, a, a, a );
 }

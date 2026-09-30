@@ -33,16 +33,30 @@ void DLParser_GBI2_Vtx( MicroCodeCommand command )
 	u32 n      = command.vtx2.n;
 	u32 v0	   = vend - n;
 
+#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	DL_PF( "    Address[0x%08x] vEnd[%d] v0[%d] Num[%d]", address, vend, v0, n );
-	if (IsVertexInfoValid(address, 16, v0, n))
+#endif
+	if ( vend > 64 )
 	{
-		gRenderer->SetNewVertexInfo( address, v0, n );
+		#ifdef DAEDALUS_DEBUG_CONSOLE
+		DBGConsole_Msg( 0, "DLParser_GBI2_Vtx: Warning, attempting to load into invalid vertex positions: %d -> %d", v0, v0+n );
+		#endif
+		return;
+	}
+
+	// Check that address is valid...
+	// Only games I seen that set this are Mario Golf/Tennis, but it looks like is caused by a dynarec issue, anyways they crash eventually
+	#ifdef DAEDALUS_ENABLE_ASSERTS
+	DAEDALUS_ASSERT( (address + (n*16) ) < MAX_RAM_ADDRESS, "Address out of range (0x%08x)", address );
+	#endif
+
+	gRenderer->SetNewVertexInfo( address, v0, n );
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-		gNumVertices += n;
-		DLParser_DumpVtxInfo( address, v0, n );
+	gNumVertices += n;
+	DLParser_DumpVtxInfo( address, v0, n );
 #endif
-	}
+
 }
 
 //*****************************************************************************
@@ -90,59 +104,105 @@ void DLParser_GBI2_PopMtx( MicroCodeCommand command )
 //001889F0: DB020000 00000030 CMD Zelda_MOVEWORD  Mem[2][00]=00000030 Lightnum=2
 void DLParser_GBI2_MoveWord( MicroCodeCommand command )
 {
-	static f32 old_fog_mult;
-	static f32 old_fog_offs;
-	
-	u32 value  = command.mw2.value;
-	u32 offset = command.mw2.offset;
-	
+
 	switch (command.mw2.type)
 	{
 	case G_MW_MATRIX:
 		{
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+			DL_PF("    G_MW_MATRIX(2)");
+			#endif
 			gRenderer->InsertMatrix(command.inst.cmd0, command.inst.cmd1);
 		}
 		break;
 
 	case G_MW_NUMLIGHT:
 		{
-			u32 num_lights = value / 24;
+			// Lightnum
+			// command->cmd1:
+			// 0x18 = 24 = 0 lights
+			// 0x30 = 48 = 2 lights
+
+			u32 num_lights = command.mw2.value / 24;
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+			DL_PF("    G_MW_NUMLIGHT: %d", num_lights);
+			#endif
 			gRenderer->SetNumLights(num_lights);
 		}
 		break;
+/*
+	case G_MW_CLIP:	// Seems to be unused?
+		{
+			DL_PF("     G_MW_CLIP");
+		}
+		break;
+*/
 	case G_MW_SEGMENT:
 		{
-			u32 segment = offset >> 2;
-			u32 address	= value;
+			u32 segment = command.mw2.offset >> 2;
+			u32 address	= command.mw2.value;
+#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+			DL_PF( "    G_MW_SEGMENT Segment[%d] = 0x%08x", segment, address );
+#endif
 			gSegments[segment] = address;
 		}
 		break;
-	case G_MW_FOG:
+
+	case G_MW_FOG: // WIP, only works for the PSP
 		{
-			f32 mul = (f32)(s16)(value >> 16);	//Fog mult
-			f32 offs = (f32)(s16)(value & 0xFFFF);	//Fog Offset
-			if ((old_fog_mult != mul) || (old_fog_offs != offs)) {
-				old_fog_mult = mul;
-				old_fog_offs = offs;
-				gRenderer->SetFogMultOffs(mul, offs);
-			}
+#ifdef DAEDALUS_PSP
+			f32 mul = (f32)(s16)(command.mw2.value >> 16);	//Fog mult
+			f32 offs = (f32)(s16)(command.mw2.value & 0xFFFF);	//Fog Offset
+
+			gRenderer->SetFogMultOffs(mul, offs);
+
+			// HW fog, only works for a few games
+#if 0
+			f32 a = (f32)(command.mw2.value >> 16);
+			f32 b = (f32)(command.mw2.value & 0xFFFF);
+
+			f32 fog_near = a / 256.0f;
+			f32 fog_far = b / 6.0f;
+
+			gRenderer->SetFogMinMax(fog_near, fog_far);
+#endif
+			//DL_PF(" G_MW_FOG. Mult = 0x%04x (%f), Off = 0x%04x (%f)", wMult, 255.0f * fMult, wOff, 255.0f * fOff );
+			//printf("1Fog %.0f | %.0f || %.0f | %.0f\n", min, max, a, b);
+#endif
 		}
 		break;
 
 	case G_MW_LIGHTCOL:
 		{
-			u32 light_idx = offset / 0x18;
-			u32 field_offset = (offset & 0x7);
+			u32 light_idx = command.mw2.offset / 0x18;
+			u32 field_offset = (command.mw2.offset & 0x7);
+#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+			DL_PF("    G_MW_LIGHTCOL/0x%08x: 0x%08x", command.mw2.offset, command.mw2.value);
+#endif
 			if (field_offset == 0)
 			{
-				u8 r = ((value>>24)&0xFF);
-				u8 g = ((value>>16)&0xFF);
-				u8 b = ((value>>8)&0xFF);
+				u8 r = ((command.mw2.value>>24)&0xFF);
+				u8 g = ((command.mw2.value>>16)&0xFF);
+				u8 b = ((command.mw2.value>>8)&0xFF);
 				gRenderer->SetLightCol(light_idx, r, g, b);
 			}
 		}
 		break;
+/*
+	case G_MW_PERSPNORM:
+		DL_PF("     G_MW_PERSPNORM 0x%04x", (s16)command.inst.cmd1);
+		break;
+
+	case G_MW_POINTS:
+		DL_PF("     G_MW_POINTS : Ignored");
+		break;
+*/
 	default:
+		{
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+			DL_PF("    Ignored!!");
+			#endif
+		}
 		break;
 	}
 }
@@ -204,7 +264,9 @@ ZeldaMoveMem: 0xdc080008 0x8010e3c0 Type: 08 Len: 08 Off: 4000
 void DLParser_GBI2_MoveMem( MicroCodeCommand command )
 {
 	u32 address	 = RDPSegAddr(command.inst.cmd1);
+	//u32 offset = (command.inst.cmd0 >> 8) & 0xFFFF;
 	u32 type	 = (command.inst.cmd0     ) & 0xFE;
+	//u32 length  = (command.inst.cmd0 >> 16) & 0xFF;
 
 	switch (type)
 	{
@@ -220,10 +282,18 @@ void DLParser_GBI2_MoveMem( MicroCodeCommand command )
 			u32 light_idx = offset2 / 24;
 			if (light_idx < 2)
 			{
+				#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 				DL_PF("    G_MV_LOOKAT" );
+				#endif
 				return;
 			}
-			RDP_MoveMemLight< POINT_LIGHT_MM, 8 >(address, light_idx - 2);
+
+			light_idx -= 2;
+			N64Light *light = (N64Light*)(g_pu8RamBase + address);
+			RDP_MoveMemLight(light_idx, light);
+
+			gRenderer->SetLightPosition(light_idx, light->x1, light->y1, light->z1, 1.0f);
+			gRenderer->SetLightEx(light_idx, light->ca, light->la, light->qa);
 		}
 		break;
 
@@ -281,17 +351,26 @@ void DLParser_GBI2_MoveMem( MicroCodeCommand command )
 //*****************************************************************************
 void DLParser_GBI2_DL_Count( MicroCodeCommand command )
 {
-	u32 address = RDPSegAddr(command.inst.cmd1);
-	if (address == 0 || !IsAddressValid(address, 8, "DL_Count"))
+	u32 address  = RDPSegAddr(command.inst.cmd1);
+	//u32 count	 = command.inst.cmd0 & 0xFFFF;
+
+	// For SSB and Kirby, otherwise we'll end up scrapping the pc
+	if (address == 0)
+	{
+		#ifdef DAEDALUS_DEBUG_CONSOLE
+		DAEDALUS_ERROR("Invalid DL Count");
+		#endif
 		return;
+	}
 
 	gDlistStackPointer++;
 	gDlistStack.address[gDlistStackPointer] = address;
-	gDlistStack.limit = command.inst.cmd0 & 0xFFFF;
-
-	DL_PF("    DL Count: Push -> DisplayList 0x%08x", address);
+	gDlistStack.limit = (command.inst.cmd0) & 0xFFFF;
+#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+	DL_PF("    Address=0x%08x %s", address, (command.dlist.param==G_DL_NOPUSH)? "Jump" : (command.dlist.param==G_DL_PUSH)? "Push" : "?");
 	DL_PF("    \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/ \\/");
 	DL_PF("    ############################################");
+	#endif
 }
 
 //*****************************************************************************
@@ -301,7 +380,6 @@ void DLParser_GBI2_GeometryMode( MicroCodeCommand command )
 {
 	gGeometryMode._u32 &= command.inst.arg0;
 	gGeometryMode._u32 |= command.inst.arg1;
-
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	DL_PF("    0x%08x 0x%08x =(x & 0x%08x) | 0x%08x", command.inst.cmd0, command.inst.cmd1, command.inst.arg0, command.inst.arg1);
 	DL_PF("    ZBuffer %s", (gGeometryMode.GBI2_Zbuffer) ? "On" : "Off");
@@ -313,14 +391,12 @@ void DLParser_GBI2_GeometryMode( MicroCodeCommand command )
 	DL_PF("    Fog %s", (gGeometryMode.GBI2_Fog) ? "On" : "Off");
 	DL_PF("    PointLight %s", (gGeometryMode.GBI2_PointLight) ? "On" : "Off");
 #endif
-
 	TnLMode TnL;
-	TnL._u32 = 0;
 
 	TnL.Light		= gGeometryMode.GBI2_Lighting;
 	TnL.TexGen		= gGeometryMode.GBI2_TexGen;
 	TnL.TexGenLin	= gGeometryMode.GBI2_TexGenLin;
-	TnL.Fog			= gGeometryMode.GBI2_Fog;// && (gRDPOtherMode.c1_m1a==3 || gRDPOtherMode.c1_m2a==3 || gRDPOtherMode.c2_m1a==3 || gRDPOtherMode.c2_m2a==3);
+	TnL.Fog			= gGeometryMode.GBI2_Fog & gFogEnabled;// && (gRDPOtherMode.c1_m1a==3 || gRDPOtherMode.c1_m2a==3 || gRDPOtherMode.c2_m1a==3 || gRDPOtherMode.c2_m2a==3);
 	TnL.Shade		= !(gGeometryMode.GBI2_TexGenLin/* & (g_ROM.GameHacks != TIGERS_HONEY_HUNT)*/);
 	TnL.Zbuffer		= gGeometryMode.GBI2_Zbuffer;
 	TnL.TriCull		= gGeometryMode.GBI2_CullFront | gGeometryMode.GBI2_CullBack;
@@ -365,22 +441,17 @@ void DLParser_GBI2_SetOtherModeH( MicroCodeCommand command )
 //*****************************************************************************
 void DLParser_GBI2_Texture( MicroCodeCommand command )
 {
-	bool enabled = command.texture.enable_gbi2;
-	if (!enabled)
-	{
-		DL_PF("    Texture its disabled -> Ignored");
-		gRenderer->SetTextureEnable( false );
-		return;
-	}
-
-	DL_PF("    Texture its enabled: Level[%d] Tile[%d]", command.texture.level, command.texture.tile);
-	gRenderer->SetTextureEnable( true );
+	#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+	DL_PF("    Level[%d] Tile[%d] %s", command.texture.level, command.texture.tile, command.texture.enable_gbi2 ? "enable":"disable");
+	#endif
 	gRenderer->SetTextureTile( command.texture.tile );
+	gRenderer->SetTextureEnable( command.texture.enable_gbi2 );
 
-	f32 scale_s = f32(command.texture.scaleS) / (65536.0f * 32.0f);
-	f32 scale_t = f32(command.texture.scaleT)  / (65536.0f * 32.0f);
-
+	f32 scale_s = f32(command.texture.scaleS) / (65535.0f * 32.0f);
+	f32 scale_t = f32(command.texture.scaleT)  / (65535.0f * 32.0f);
+	#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	DL_PF("    ScaleS[%0.4f], ScaleT[%0.4f]", scale_s*32.0f, scale_t*32.0f);
+	#endif
 	gRenderer->SetTextureScale( scale_s, scale_t );
 }
 

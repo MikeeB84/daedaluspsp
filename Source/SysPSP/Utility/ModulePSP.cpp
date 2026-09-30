@@ -17,13 +17,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
-#include "SysPSP/Utility/ModulePSP.h"
+#include "stdafx.h"
+#include "ModulePSP.h"
 
 #include <stdio.h>
-#include <iostream>
-
 
 #include <pspsdk.h>
 
@@ -38,21 +35,22 @@ namespace CModule
 
 		if(ret < 0)
 		{
-			std::cout << "Couldn't unload module!" << id <<": " << ret << std::endl;
+			printf("Couldn't unload module! : 0x%08X\n",ret);
 		}
 	}
 
-	int Load( const std::filesystem::path path )
+	int Load( const char *path )
 	{
-		int ret = pspSdkLoadStartModule(path.c_str(), PSP_MEMORY_PARTITION_KERNEL);
+		int ret = pspSdkLoadStartModule(path, PSP_MEMORY_PARTITION_KERNEL);
 
 		if( ret < 0 )
-		{	
-			std::cout << "Failed to load" << path <<": " << ret << std::endl;
+		{
+			printf( "Failed to load %s: %d\n",path, ret );
 			return ret; //-1
 		}
 
-		std::cout << "Successfully loaded" << path <<": " << ret << std::endl;
+		printf( "Successfully loaded %s: %08X\n", path, ret );
+
 		return ret;
 	}
 }

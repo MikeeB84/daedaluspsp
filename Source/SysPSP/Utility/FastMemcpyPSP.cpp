@@ -7,10 +7,9 @@ homepage: http://wordpress.fx-world.org
 
 */
 
-
-#include "Base/Types.h"
+#include "stdafx.h"
 #include "Utility/FastMemcpy.h"
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 #include <string.h>
 

@@ -26,7 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <stdarg.h>
 
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 enum EDebugFlags
 {
@@ -67,8 +67,10 @@ enum EDebugFlags
 //
 static const u32	DAED_DEBUG_MASK( 0 );
 
-bool		Debug_InitLogging(void);
+bool		Debug_InitLogging();
 void		Debug_FinishLogging();
+bool		Debug_GetLoggingEnabled();
+void		Debug_SetLoggingEnabled( bool enabled );
 void		Debug_Print( const char * format, ... );
 
 #define DAED_CHECK_LOG( flags )			DAED_DEBUG_MASK & (flags)

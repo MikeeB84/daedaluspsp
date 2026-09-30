@@ -17,7 +17,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-static void WriteValueInvalid( u32 address, u32 value [[maybe_unused]] )
+static void WriteValueInvalid( u32 address, u32 value )
 {
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DPF( DEBUG_MEMORY, "Illegal Memory Access Tried to Write To 0x%08x PC: 0x%08x", address, gCPUState.CurrentPC );
@@ -25,7 +25,7 @@ static void WriteValueInvalid( u32 address, u32 value [[maybe_unused]] )
 	#endif
 }
 
-static void WriteValueMapped( u32 address, u32 value [[maybe_unused]] )
+static void WriteValueMapped( u32 address, u32 value )
 {
 	bool missing;
 
@@ -73,7 +73,7 @@ static void WriteValue_8404_8404( u32 address, u32 value )
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DPF( DEBUG_MEMORY_SP_REG, "Writing to SP_REG: 0x%08x/0x%08x", address, value );
 	#endif
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 
 	switch (offset)
 	{
@@ -123,7 +123,7 @@ static void WriteValue_8410_841F( u32 address, u32 value )
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DPF( DEBUG_MEMORY_DP, "Writing to DP_COMMAND_REG: 0x%08x", address );
 	#endif
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 
 	switch (offset)
 	{
@@ -163,12 +163,12 @@ static void WriteValue_8410_841F( u32 address, u32 value )
 }
 
 // 0x0420 0000 to 0x042F FFFF DP Span Registers
-static void WriteValue_8420_842F( u32 address [[maybe_unused]], u32 value [[maybe_unused]] )
+static void WriteValue_8420_842F( u32 address, u32 value )
 {
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "Write to DP Span Registers is unhandled (0x%08x, PC: 0x%08x)",
 		address, gCPUState.CurrentPC);
-	#endif
+		#endif
 }
 
 
@@ -178,7 +178,7 @@ static void WriteValue_8430_843F( u32 address, u32 value )
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DPF( DEBUG_MEMORY_MI, "Writing to MI Registers: 0x%08x", address );
 	#endif
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 
 	switch (offset)
 	{
@@ -198,9 +198,10 @@ static void WriteValue_8430_843F( u32 address, u32 value )
 }
 
 // 0x0440 0000 to 0x044F FFFF Video Interface (VI) Registers
+#ifdef DAEDALUS_PSP	// This is out of spec but only writes to VI_CURRENT_REG do something.. /Salvy
 static void WriteValue_8440_844F( u32 address, u32 value )
 {
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 	if (offset == 0x10)
 	{
 		Memory_MI_ClrRegisterBits(MI_INTR_REG, MI_INTR_VI);
@@ -210,6 +211,70 @@ static void WriteValue_8440_844F( u32 address, u32 value )
 
 	*(u32 *)((u8 *)g_pMemoryBuffers[MEM_VI_REG] + offset) = value;
 }
+#else
+extern void RenderFrameBuffer(u32);
+extern u32 gRDPFrame;
+static void WriteValue_8440_844F( u32 address, u32 value )
+{
+	u32 offset {address & 0xFF};
+
+	switch (offset)
+	{
+	case 0x0:	// VI_CONTROL_REG
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+		DPF( DEBUG_VI, "VI_CONTROL_REG set to 0x%08x", value );
+		#endif
+#ifdef DAEDALUS_LOG
+		DisplayVIControlInfo(value);
+#endif
+		if (gGraphicsPlugin != NULL)
+		{
+			gGraphicsPlugin->ViStatusChanged();
+		}
+		break;
+
+	case 0x4:	// VI_ORIGIN_REG
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+		DPF( DEBUG_VI, "VI_ORIGIN_REG set to %d", value );
+#endif
+		 // NB: if no display lists executed, interpret framebuffer
+		if( gRDPFrame == 0 )
+		{
+			RenderFrameBuffer(value & 0x7FFFFF);
+		}
+		else
+		{
+			// Builtin video plugin already calls UpdateScreen in DLParser_Process
+#ifndef DAEDALUS_GL
+			gGraphicsPlugin->UpdateScreen();
+#endif
+		}
+		break;
+
+	case 0x8:	// VI_WIDTH_REG
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+		DPF( DEBUG_VI, "VI_WIDTH_REG set to %d pixels", value );
+		#endif
+		if (gGraphicsPlugin != NULL)
+		{
+			gGraphicsPlugin->ViWidthChanged();
+		}
+		break;
+
+	case 0x10:	// VI_CURRENT_REG
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+		DPF( DEBUG_VI, "VI_CURRENT_REG set to 0x%08x", value );
+		// Any write clears interrupt line...
+		DPF( DEBUG_VI, "VI: Clearing interrupt flag. PC: 0x%08x", gCPUState.CurrentPC );
+		#endif
+		Memory_MI_ClrRegisterBits(MI_INTR_REG, MI_INTR_VI);
+		R4300_Interrupt_UpdateCause3();
+		return;
+	}
+
+	*(u32 *)((u8 *)g_pMemoryBuffers[MEM_VI_REG] + offset) = value;
+}
+#endif
 
 // 0x0450 0000 to 0x045F FFFF Audio Interface (AI) Registers
 static void WriteValue_8450_845F( u32 address, u32 value )
@@ -217,7 +282,7 @@ static void WriteValue_8450_845F( u32 address, u32 value )
 		#ifdef DAEDALUS_DEBUG_CONSOLE
 	DPF( DEBUG_MEMORY_AI, "Writing to AI Registers: 0x%08x", address );
 	#endif
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 
 	switch (offset)
 	{
@@ -255,7 +320,7 @@ static void WriteValue_8450_845F( u32 address, u32 value )
 // 0x0460 0000 to 0x046F FFFF Peripheral Interface (PI) Registers
 static void WriteValue_8460_846F( u32 address, u32 value )
 {
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 	switch (offset)
 	{
 /*
@@ -300,7 +365,7 @@ static void WriteValue_8480_848F( u32 address, u32 value )
 		#ifdef DAEDALUS_DEBUG_CONSOLE
 	DPF( DEBUG_MEMORY_SI, "Writing to MEM_SI_REG: 0x%08x", address );
 #endif
-	u32 offset = address & 0xFF;
+	u32 offset {address & 0xFF};
 	switch (offset)
 	{
 	case 0x0:	//SI_DRAM_ADDR_REG
@@ -356,7 +421,8 @@ static void WriteValue_9FC0_9FCF( u32 address, u32 value )
 
 static void WriteValue_FlashRam( u32 address, u32 value )
 {
-	if (g_ROM.settings.SaveType == SAVE_TYPE_FLASH)
+	u32 offset {address & 0xFF};
+	if (g_ROM.settings.SaveType == SAVE_TYPE_FLASH && offset == 0)
 	{
 		if ((address&0x1FFFFFFF) == FLASHRAM_WRITE_ADDR)
 		{
@@ -364,19 +430,18 @@ static void WriteValue_FlashRam( u32 address, u32 value )
 			return;
 		}
 	}
-	else
-	{
-		DAEDALUS_ERROR("ROM is accessing a Flashram region, but save type is not correct");
-	}
-	
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "[GWrite to FlashRam (0x%08x) is invalid", address);
+	#endif
 }
 
-static void WriteValue_ROM( u32 address [[maybe_unused]], u32 value )
+static void WriteValue_ROM( u32 address, u32 value )
 {
 	// Write to ROM support
 	// A Bug's Life and Toy Story 2 write to ROM, add support by storing written value which is used when reading from Rom.
-
-	DBGConsole_Msg(0, "[YWarning : Wrote to ROM ->] 0x%08x", value);
-	RomBuffer::SaveRomValue( value );
+	g_pWriteRom = value;
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+	DBGConsole_Msg(0, "[YWarning : Wrote to ROM -> [0x%08x]", value);
+	#endif
+	g_RomWritten = true;
 }

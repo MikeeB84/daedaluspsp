@@ -20,16 +20,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef GRAPHICS_PNGUTIL_H_
 #define GRAPHICS_PNGUTIL_H_
 
-#include <fstream>
+#include <stdlib.h>
 
-#include "Graphics/TextureFormat.h"
+#include "TextureFormat.h"
 
+class DataSink;
 class CNativeTexture;
 
-void PngSaveImage( const std::filesystem::path& filename, const void * data, const void * palette, ETextureFormat pixelformat, s32 pitch, u32 width, u32 height, bool use_alpha );
-void PngSaveImage( std::ofstream& file, const void * data, const void * palette, ETextureFormat pixelformat, s32 pitch, u32 width, u32 height, bool use_alpha );
-void PngSaveImage( std::ofstream& file, const std::shared_ptr<CNativeTexture> texture );
+void PngSaveImage( const char* filename, const void * data, const void * palette, ETextureFormat pixelformat, s32 pitch, u32 width, u32 height, bool use_alpha );
+void PngSaveImage( DataSink * sink, const void * data, const void * palette, ETextureFormat pixelformat, s32 pitch, u32 width, u32 height, bool use_alpha );
+void PngSaveImage( DataSink * sink, const CNativeTexture * texture );
 
-void FlattenTexture(const std::shared_ptr<CNativeTexture> texture, void * dst, size_t len);
+void FlattenTexture(const CNativeTexture * texture, void * dst, size_t len);
 
 #endif // GRAPHICS_PNGUTIL_H_

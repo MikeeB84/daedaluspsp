@@ -18,53 +18,107 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 // Display stuff like registers, instructions, memory usage and so on
-
-#include "Base/Types.h"
+#include "stdafx.h"
+#include "Dump.h"
 
 #include <ctype.h>
-#include <filesystem>
-#include <iostream>
-#include <fstream>
 
-#include <cstring> 
+#include "DebugLog.h"
+#include "DBGConsole.h"
 
-#include "Interface/ConfigOptions.h"
+#include "Config/ConfigOptions.h"
 #include "Core/CPU.h"
 #include "Core/Interrupt.h"
 #include "Core/Memory.h"
-#include "RomFile/ROMBuffer.h"
-#include "Debug/Dump.h"
-#include "Debug/DebugLog.h"
-#include "Debug/DBGConsole.h"
+#include "Core/ROMBuffer.h"
 #include "OSHLE/patch.h"		// For GetCorrectOp
-#include "Ultra/ultra_R4300.h"
+#include "OSHLE/ultra_R4300.h"
+#include "System/Paths.h"
+#include "Utility/IO.h"
+#include "Utility/PrintOpCode.h"
 
-#include "Debug/PrintOpCode.h"
-
-
-const std::filesystem::path gDumpDir = "Dumps";
+static IO::Filename gDumpDir = "";
 
 // Initialise the directory where files are dumped
-// Appends subdir to the global dump base. Stores in rootdir)
-// Not really required with std::filesystem
-void Dump_GetDumpDirectory(std::filesystem::path& rootdir, const std::filesystem::path& subdir)
+// Appends subdir to the global dump base. Stores in rootdir
+void Dump_GetDumpDirectory(char * rootdir, const char * subdir)
 {
-	if (!subdir.empty())
+	if (gDumpDir[0] == '\0')
 	{
-		rootdir = gDumpDir / subdir;
-	}
-	else 
-	{
-		rootdir = gDumpDir;
+		// Initialise
+#if defined(DAEDALUS_DEBUG_DISPLAYLIST) || !defined(DAEDALUS_SILENT)
+		IO::Path::Combine(gDumpDir, gDaedalusExePath, "Dumps");
+#else
+		IO::Path::Combine(gDumpDir, gDaedalusExePath, "ms0:/PICTURE/");
+#endif
 	}
 
+	// If a subdirectory was specified, append
+	if (subdir[0] != '\0')
+	{
+		IO::Path::Combine(rootdir, gDumpDir, subdir);
+	}
+	else
+	{
+		IO::Path::Assign(rootdir, gDumpDir);
+	}
+
+#ifdef DAEDALUS_DEBUG_CONSOLE
+	if(CDebugConsole::IsAvailable())
+	{
+		//DBGConsole_Msg( 0, "Dump dir: [C%s]", rootdir );
+	}
+#endif
+	IO::Directory::EnsureExists(rootdir);
+
+}
+
+
+// E.g. Dump_GetSaveDirectory([out], "c:\roms\test.rom", ".sra")
+// would first try to find the save in g_DaedalusConfig.mSaveDir. If this is not
+// found, g_DaedalusConfig.mRomsDir is checked.
+void Dump_GetSaveDirectory(char * rootdir, const char * rom_filename, const char * extension)
+{
+	// If the Save path has not yet been set up, prompt user
+	if (strlen(g_DaedalusConfig.mSaveDir) == 0)
+	{
+		// FIXME: missing prompt here!
+
+		// User may have cancelled
+		if (strlen(g_DaedalusConfig.mSaveDir) == 0)
+		{
+			// Default to rom path
+			IO::Path::Assign(g_DaedalusConfig.mSaveDir, rom_filename);
+			IO::Path::RemoveFileSpec(g_DaedalusConfig.mSaveDir);
+#ifndef DAEDALUS_PSP
+			// FIXME(strmnnrmn): for OSX I generate savegames in a subdir Save, to make it easier to clean up.
+			IO::Path::Append(g_DaedalusConfig.mSaveDir, "Save");
+#endif
+
+#ifdef DAEDALUS_DEBUG_CONSOLE
+			if(CDebugConsole::IsAvailable())
+			{
+				DBGConsole_Msg(0, "SaveDir is still empty - defaulting to [C%s]", g_DaedalusConfig.mSaveDir);
+			}
+#endif
+		}
+	}
+
+	IO::Directory::EnsureExists(g_DaedalusConfig.mSaveDir);
+
+	// Form the filename from the file spec (i.e. strip path and replace the extension)
+	IO::Filename file_name;
+	IO::Path::Assign(file_name, IO::Path::FindFileName(rom_filename));
+	IO::Path::SetExtension(file_name, extension);
+
+	IO::Path::Combine(rootdir, g_DaedalusConfig.mSaveDir, file_name);
 }
 
 #ifndef DAEDALUS_SILENT
 //*****************************************************************************
 //
 //*****************************************************************************
-void Dump_DisassembleMIPSRange(std::ofstream& fh, u32 address_offset, const OpCode * b, const OpCode * e)
+void Dump_DisassembleMIPSRange(FILE * fh, u32 address_offset, const OpCode * b, const OpCode * e)
 {
 	u32 address( address_offset );
 	const OpCode * p( b );
@@ -87,26 +141,31 @@ void Dump_DisassembleMIPSRange(std::ofstream& fh, u32 address_offset, const OpCo
 #endif
 
 		SprintOpCodeInfo( opinfo, address, op );
-		std::string data = FORMAT_NAMESPACE::format("0x{}: <0x{}> {}", address, op._u32, opinfo);
-	
-		fh << data;
-		// fprintf(fh, "0x%08x: <0x%08x> %s\n", address, op._u32, opinfo);
+		fprintf(fh, "0x%08x: <0x%08x> %s\n", address, op._u32, opinfo);
 
 		address += 4;
 		++p;
 	}
 }
 
-void Dump_Disassemble(u32 start, u32 end, const std::filesystem::path& p_file_name)
+void Dump_Disassemble(u32 start, u32 end, const char * p_file_name)
 {
-
-	std::filesystem::path file_path = setBasePath(p_file_name);
+	IO::Filename file_path;
 
 	// Cute hack - if the end of the range is less than the start,
 	// assume it is a length to disassemble
 	if (end < start)
 		end = start + end;
 
+	if (p_file_name == NULL || strlen(p_file_name) == 0)
+	{
+		Dump_GetDumpDirectory(file_path, "");
+		IO::Path::Append(file_path, "dis.txt");
+	}
+	else
+	{
+		IO::Path::Assign(file_path, p_file_name);
+	}
 
 	u8 * p_base;
 	if (!Memory_GetInternalReadAddress(start, (void**)&p_base))
@@ -114,50 +173,56 @@ void Dump_Disassemble(u32 start, u32 end, const std::filesystem::path& p_file_na
 		DBGConsole_Msg(0, "[Ydis: Invalid base 0x%08x]", start);
 		return;
 	}
-	std::ofstream fp(file_path, std::ios::out);
 
-	DBGConsole_Msg(0, "Disassembling from 0x%08x to 0x%08x ([C%s])", start, end, file_path.string().c_str());
+	FILE * fp( fopen(file_path, "w") );
+	if (fp == NULL)
+		return;
+
+	DBGConsole_Msg(0, "Disassembling from 0x%08x to 0x%08x ([C%s])", start, end, file_path);
 
 	const OpCode * op_start( reinterpret_cast< const OpCode * >( p_base ) );
 	const OpCode * op_end(   reinterpret_cast< const OpCode * >( p_base + (end-start) ) );
 
 	Dump_DisassembleMIPSRange(fp, start, op_start, op_end);
 
+	fclose(fp);
 }
 #endif
 
 #ifndef DAEDALUS_SILENT
+//*****************************************************************************
+//
 //	N.B. This assumbes that b/e are 4 byte aligned (otherwise endianness is broken)
-
-void Dump_MemoryRange(std::ofstream& fh, u32 address_offset, const u32 * b, const u32 * e)
+//
+//*****************************************************************************
+void Dump_MemoryRange(FILE * fh, u32 address_offset, const u32 * b, const u32 * e)
 {
 	u32 address( address_offset );
 	const u32 * p( b );
 	while( p < e )
 	{
-		std::string output = FORMAT_NAMESPACE::format("0x{}x: {} {} {} {} ", address, p[0], p[1], p[2], p[3]);
-
-		fh << output;
+		fprintf(fh, "0x%08x: %08x %08x %08x %08x ", address, p[0], p[1], p[2], p[3]);
 
 		const u8 * p8( reinterpret_cast< const u8 * >( p ) );
 		for (u32 i = 0; i < 16; i++)
 		{
 			u8 c( p8[i ^ U8_TWIDDLE] );
 			if (c >= 32 && c < 128)
-			fh << c;
+				fprintf(fh, "%c", c);
 			else
-			fh << ".";
+				fprintf(fh, ".");
+
 			if ((i%4)==3)
-			fh << " " ;
+				fprintf(fh, " ");
 		}
-		fh << "\n";
+		fprintf(fh, "\n");
 
 		address += 16;
 		p += 4;
 	}
 }
 
-void Dump_DisassembleRSPRange(std::ofstream& fh, u32 address_offset, const OpCode * b, const OpCode * e)
+void Dump_DisassembleRSPRange(FILE * fh, u32 address_offset, const OpCode * b, const OpCode * e)
 {
 	u32 address( address_offset );
 	const OpCode * p( b );
@@ -165,17 +230,14 @@ void Dump_DisassembleRSPRange(std::ofstream& fh, u32 address_offset, const OpCod
 	{
 		char opinfo[400];
 		SprintRSPOpCodeInfo( opinfo, address, *p );
-
-		std::string output = FORMAT_NAMESPACE::format("0x{}: <0x{}> {}\n", address, p->_u32, opinfo);
-		
-		fh << output;
+		fprintf(fh, "0x%08x: <0x%08x> %s\n", address, p->_u32, opinfo);
 
 		address += 4;
 		++p;
 	}
 }
 
-void Dump_RSPDisassemble(const std::filesystem::path& p_file_name)
+void Dump_RSPDisassemble(const char * p_file_name)
 {
 	u8 * base;
 	u32 start = 0xa4000000;
@@ -187,11 +249,23 @@ void Dump_RSPDisassemble(const std::filesystem::path& p_file_name)
 		return;
 	}
 
-	std::filesystem::path file_path = setBasePath(p_file_name);
+	IO::Filename file_path;
 
-	DBGConsole_Msg(0, "Disassembling from 0x%08x to 0x%08x ([C%s])", start, end, file_path.string().c_str());
-	
-	std::ofstream fp(p_file_name, std::ios::out);
+	if (p_file_name == NULL || strlen(p_file_name) == 0)
+	{
+		Dump_GetDumpDirectory(file_path, "");
+		IO::Path::Append(file_path, "rdis.txt");
+	}
+	else
+	{
+		IO::Path::Assign(file_path, p_file_name);
+	}
+
+	DBGConsole_Msg(0, "Disassembling from 0x%08x to 0x%08x ([C%s])", start, end, file_path);
+
+	FILE * fp( fopen(file_path, "w") );
+	if (fp == NULL)
+		return;
 
 	const u32 * mem_start( reinterpret_cast< const u32 * >( base + 0x0000 ) );
 	const u32 * mem_end(   reinterpret_cast< const u32 * >( base + 0x1000 ) );
@@ -203,7 +277,7 @@ void Dump_RSPDisassemble(const std::filesystem::path& p_file_name)
 
 	Dump_DisassembleRSPRange( fp, start + 0x1000, op_start, op_end );
 
-	// fclose(fp);
+	fclose(fp);
 }
 #endif
 
@@ -213,24 +287,27 @@ void Dump_RSPDisassemble(const std::filesystem::path& p_file_name)
 //*****************************************************************************
 void Dump_Strings( const char * p_file_name )
 {
-	std::filesystem::path file_path;
-	std::ofstream fp;
+	IO::Filename file_path;
+	FILE * fp;
 
 	static const u32 MIN_LENGTH = 5;
 
 	if (p_file_name == NULL || strlen(p_file_name) == 0)
 	{
-		file_path /= "strings.txt";
+		Dump_GetDumpDirectory(file_path, "");
+		IO::Path::Append(file_path, "strings.txt");
 	}
 	else
 	{
-		file_path = p_file_name;
+		IO::Path::Assign(file_path, p_file_name);
 	}
 
-	DBGConsole_Msg(0, "Dumping strings in rom ([C%s])", file_path.string().c_str());
+	DBGConsole_Msg(0, "Dumping strings in rom ([C%s])", file_path);
 
 	// Overwrite here
-	fp.open(file_path, std::ios::out);
+	fp = fopen(file_path, "w");
+	if (fp == NULL)
+		return;
 
 	// Memory dump
 	u32 ascii_start = 0;
@@ -250,25 +327,20 @@ void Dump_Strings( const char * p_file_name )
 		{
 			if ( ascii_count >= MIN_LENGTH )
 			{
-				
-				std::string output = FORMAT_NAMESPACE::format("0x{}", ascii_start);
-	
-				fp << output;
-
-				// fprintf( fp, "0x%08x: ", ascii_start );
+				fprintf( fp, "0x%08x: ", ascii_start );
 
 				for ( u32 j = 0; j < ascii_count; j++ )
 				{
-					fp << RomBuffer::ReadValueRaw< u8 >( (ascii_start + j ) ^ 0x3 );
-					// fprintf( fp, "%c", RomBuffer::ReadValueRaw< u8 >( (ascii_start + j ) ^ 0x3 ) );
+					fprintf( fp, "%c", RomBuffer::ReadValueRaw< u8 >( (ascii_start + j ) ^ 0x3 ) );
 				}
-				fp << "\n";
-				// fprintf( fp, "\n");
+
+				fprintf( fp, "\n");
 			}
 
 			ascii_count = 0;
 		}
 	}
-	// fclose(fp);
+	fclose(fp);
 }
 #endif
+

@@ -7,8 +7,7 @@ http://gitorious.org/~jjs/ags/ags-for-psp
 
 */
 
-
-#include "Base/Types.h"
+#include "stdafx.h"
 
 #include <malloc.h>
 #include <stdio.h>
@@ -17,8 +16,8 @@ http://gitorious.org/~jjs/ags/ags-for-psp
 #include <psppower.h>
 #include <pspsuspend.h>
 
-#include "Base/Assert.h"
-#include "SysPSP/Utility/ModulePSP.h"
+#include "Debug/DaedalusAssert.h"
+#include "ModulePSP.h"
 
 
 bool bVolatileMem  {false};

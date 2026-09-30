@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef UTILITY_STREAM_H_
 #define UTILITY_STREAM_H_
 
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 class COutputStream
 {
@@ -38,10 +38,10 @@ class CNullOutputStream : public COutputStream
 public:
 	virtual ~CNullOutputStream() {}
 
-	virtual	COutputStream & operator<<( const char * ) { return *this; }
-	virtual	COutputStream & operator<<( char ) { return *this; }
-	virtual	COutputStream & operator<<( s32 ) { return *this; }
-	virtual	COutputStream & operator<<( u32 ) { return *this; }
+	virtual	COutputStream & operator<<( const char * p_str ) { return *this; }
+	virtual	COutputStream & operator<<( char val ) { return *this; }
+	virtual	COutputStream & operator<<( s32 val ) { return *this; }
+	virtual	COutputStream & operator<<( u32 val ) { return *this; }
 
 	const char *		c_str() const { return ""; }
 };
@@ -64,7 +64,7 @@ private:
 	class COutputStringStreamImpl *		mpImpl;
 };
 
-inline COutputStream & operator<<( COutputStream & str, CNullOutputStream & )
+inline COutputStream & operator<<( COutputStream & str, CNullOutputStream & rhs )
 {
 	return str;
 }

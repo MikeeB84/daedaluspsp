@@ -25,59 +25,55 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //
 //
 
-#include "Base/Types.h"
-#include <cstring>
+#include "stdafx.h"
+#include "audiohle.h"
+#include "AudioHLEProcessor.h"
 
-#include "HLEAudio/HLEAudioInternal.h"
-#include "HLEAudio/HLEAudioState.h"
-#include "Ultra/ultra_sptask.h"
+#include "OSHLE/ultra_sptask.h"
+
 #include "Utility/Profiler.h"
-#include "Base/Macros.h"
 
 // Audio UCode lists
 // Dummy UCode Handler
 //
-static void SPU(AudioHLECommand) {}
+static void SPU( AudioHLECommand command ){}
 //
 //     ABI ? : Unknown or unsupported UCode
 //
-// std::array<AudioHLEInstruction, 0x20> ABIUnknown = {
-AudioHLEInstruction ABIUnknown[0x20] = { // Unknown ABI
-    SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU,
-    SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU,
-    SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU};
+AudioHLEInstruction ABIUnknown [0x20] = { // Unknown ABI
+	SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU,
+	SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU,
+	SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU,
+	SPU, SPU, SPU, SPU, SPU, SPU, SPU, SPU
+};
 //---------------------------------------------------------------------------------------------
 //
 //     ABI 1 : Mario64, WaveRace USA, Golden Eye 007, Quest64, SF Rush
-//				 60% of all games use this.  Distributed 3rd Party
-//ABI
+//				 60% of all games use this.  Distributed 3rd Party ABI
 //
 extern AudioHLEInstruction ABI1[0x20];
-// extern std::array<AudioHLEInstruction, 0x20> ABI1;
 //---------------------------------------------------------------------------------------------
 //
 //     ABI 2 : WaveRace JAP, MarioKart 64, Mario64 JAP RumbleEdition,
-//				 Yoshi Story, Pokemon Games, Zelda64, Zelda MoM
-//(miyamoto) 				 Most NCL or NOA games (Most commands)
+//				 Yoshi Story, Pokemon Games, Zelda64, Zelda MoM (miyamoto)
+//				 Most NCL or NOA games (Most commands)
 extern AudioHLEInstruction ABI2[0x20];
-
-// extern std::array<AudioHLEInstruction, 0x20> ABI2;
 //---------------------------------------------------------------------------------------------
 //
-//     ABI 3 : DK64, Perfect Dark, Banjo Kazooie, Banjo Tooie
+//     ABI 3 : DK64, Perfect Dark, Banjo Kazooi, Banjo Tooie
 //				 All RARE games except Golden Eye 007
 //
 extern AudioHLEInstruction ABI3[0x20];
-// extern std::array<AudioHLEInstruction, 0x20> ABI3;
 //---------------------------------------------------------------------------------------------
 //
 //     ABI 5 : Factor 5 - MoSys/MusyX
-//				 Rogue Squadron, Tarzan, Hydro Thunder, and
-//TWINE 				 Indiana Jones and Battle for Naboo (?)
+//				 Rogue Squadron, Tarzan, Hydro Thunder, and TWINE
+//				 Indiana Jones and Battle for Naboo (?)
 //---------------------------------------------------------------------------------------------
 //
 // Below functions were updated
 //
+
 
 AudioHLEInstruction *ABI = ABIUnknown;
 bool bAudioChanged = false;
@@ -87,81 +83,68 @@ extern bool isZeldaABI;
 //*****************************************************************************
 //
 //*****************************************************************************
-void Audio_Reset() {
-  bAudioChanged = false;
-  isMKABI = false;
-  isZeldaABI = false;
+void Audio_Reset()
+{
+	bAudioChanged = false;
+	isMKABI		  = false;
+	isZeldaABI	  = false;
 }
 
 //*****************************************************************************
 //
 //*****************************************************************************
-inline void Audio_Ucode_Detect(OSTask *pTask) {
-  u8 *p_base = g_pu8RamBase + (uintptr_t)pTask->t.ucode_data;
-  if (*(u32 *)(p_base + 0) != 0x01) {
-    if (*(u32 *)(p_base + 0x10) == 0x00000001)
-      ABI = ABIUnknown;
-    else
-      ABI = ABI3;
-  } else {
-    if (*(u32 *)(p_base + 0x30) == 0xF0000F00)
-      ABI = ABI1;
-    else
-      ABI = ABI2;
-  }
+inline void Audio_Ucode_Detect(OSTask * pTask)
+{
+	u8* p_base = g_pu8RamBase + (u32)pTask->t.ucode_data;
+	if (*(u32*)(p_base + 0) != 0x01)
+	{
+		if (*(u32*)(p_base + 0x10) == 0x00000001)
+			ABI = ABIUnknown;
+		else
+			ABI = ABI3;
+	}
+	else
+	{
+		if (*(u32*)(p_base + 0x30) == 0xF0000F00)
+			ABI = ABI1;
+		else
+			ABI = ABI2;
+	}
 }
 
 //*****************************************************************************
 //
 //*****************************************************************************
-u8 *gAudioRDRAM = nullptr;
-
-static void Audio_ProcessList();
-
-void Audio_Ucode() {
-  gAudioRDRAM = (u8 *)g_pMemoryBuffers[MEM_RD_RAM];
-  Audio_ProcessList();
-}
-
-// gAudioRDRAM must already point at the uncached view (see Audio_PrepareForME):
-// the ME must not write globals the main CPU also uses, since its cache is written
-// back as whole lines when it finishes.
-int Audio_Ucode_ME(int) {
-  Audio_ProcessList();
-  return 0;
-}
-
-void Audio_PrepareForME() {
-  gAudioRDRAM = make_uncached_ptr((u8 *)g_pMemoryBuffers[MEM_RD_RAM]);
-}
-
-static void Audio_ProcessList() {
-#ifdef DAEDALUS_PROFILE
-  DAEDALUS_PROFILE("HLEMain::Audio_Ucode");
+void Audio_Ucode()
+{
+	#ifdef DAEDALUS_PROFILE
+	DAEDALUS_PROFILE( "HLEMain::Audio_Ucode" );
 #endif
-  OSTask *pTask = (OSTask *)(g_pu8SpMemBase + 0x0FC0);
+	OSTask * pTask = (OSTask *)(g_pu8SpMemBase + 0x0FC0);
 
-  // Only detect ABI once per game
-  if (!bAudioChanged) {
-    bAudioChanged = true;
-    Audio_Ucode_Detect(pTask);
-  }
+	// Only detect ABI once per game
+	if ( !bAudioChanged )
+	{
+		bAudioChanged = true;
+		Audio_Ucode_Detect( pTask );
+	}
 
-  gAudioHLEState.LoopVal = 0;
-  memset( gAudioHLEState.Segments, 0, sizeof( gAudioHLEState.Segments ) );
+	gAudioHLEState.LoopVal = 0;
+	//memset( gAudioHLEState.Segments, 0, sizeof( gAudioHLEState.Segments ) );
 
-  u32 *p_alist = (u32 *)(g_pu8RamBase + (uintptr_t)pTask->t.data_ptr);
-  u32 ucode_size = (pTask->t.data_size >> 3); // ABI5 can return 0 here!!!
+	u32 * p_alist = (u32 *)(g_pu8RamBase + (u32)pTask->t.data_ptr);
+	u32 ucode_size = (pTask->t.data_size >> 3);	//ABI5 can return 0 here!!!
 
-  while (ucode_size) {
-    AudioHLECommand command;
-    command.cmd0 = *p_alist++;
-    command.cmd1 = *p_alist++;
+	while( ucode_size )
+	{
+		AudioHLECommand command;
+		command.cmd0 = *p_alist++;
+		command.cmd1 = *p_alist++;
 
-    ABI[command.cmd](command);
+		ABI[command.cmd](command);
 
-    --ucode_size;
+		--ucode_size;
 
-    // printf("%08X %08X\n",command.cmd0,command.cmd1);
-  }
+		//printf("%08X %08X\n",command.cmd0,command.cmd1);
+	}
 }

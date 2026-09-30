@@ -24,11 +24,11 @@
 #define HLEGRAPHICS_DISPLAYLISTDEBUGGER_H_
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-bool DLDebugger_IsDebugging(void);
+bool DLDebugger_IsDebugging();
 void DLDebugger_RequestDebug();
-bool DLDebugger_Process(void);
+bool DLDebugger_Process();
 
-bool DLDebugger_RegisterWebDebug(void);
+bool DLDebugger_RegisterWebDebug();
 #endif
 
 #endif // HLEGRAPHICS_DISPLAYLISTDEBUGGER_H_

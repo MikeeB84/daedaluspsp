@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define DYNAREC_TRACE_H_
 
 #include "Core/R4300OpCode.h"
-#include "DynaRec/StaticAnalysis.h"
+#include "StaticAnalysis.h"
 
 struct STraceEntry
 {

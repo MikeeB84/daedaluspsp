@@ -21,25 +21,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define DEBUG_DUMP_H_
 
 #include <stdio.h>
-#include <filesystem> 
 
-#include "Base/Types.h"
-
+#include "Utility/DaedalusTypes.h"
 
 struct OpCode;
-std::filesystem::path Save_As(const std::filesystem::path filename, const std::filesystem::path extension, std::filesystem::path dest);
-std::filesystem::path Dump_Directory(std::filesystem::path name, std::filesystem::path dir);
+
 void Dump_GetDumpDirectory(char * rootdir, const char * subdir);
+void Dump_GetSaveDirectory(char * rootdir, const char * rom_filename, const char * extension);
 
 #ifndef DAEDALUS_SILENT
 
-void Dump_MemoryRange(std::ofstream& fh, u32 address_offset, const u32 * b, const u32 * e);
-void Dump_DisassembleRSPRange(std::ofstream& fh, u32 address_offset, const OpCode * b, const OpCode * e);
+void Dump_MemoryRange(FILE * fh, u32 address_offset, const u32 * b, const u32 * e);
+void Dump_DisassembleRSPRange(FILE * fh, u32 address_offset, const OpCode * b, const OpCode * e);
 
-void Dump_DisassembleMIPSRange(std::ofstream& fh, u32 address_offset, const OpCode * b, const OpCode * e);
-void Dump_Disassemble(u32 start, u32 end, const std::filesystem::path p_file_name);
-void Dump_RSPDisassemble(const std::filesystem::path& p_file_name);
-void Dump_Strings(const std::filesystem::path& p_file_name);
+void Dump_DisassembleMIPSRange(FILE * fh, u32 address_offset, const OpCode * b, const OpCode * e);
+void Dump_Disassemble(u32 start, u32 end, const char * p_file_name);
+void Dump_RSPDisassemble(const char * p_file_name);
+void Dump_Strings(const char * p_file_name);
 
 #endif
 

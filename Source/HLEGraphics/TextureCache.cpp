@@ -21,14 +21,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Uses a HashTable (hashing on TImg) to allow quick access
 //  to previously used textures
 
+#include "stdafx.h"
 
-#include "Base/Types.h"
-
-#include "HLEGraphics/DLDebug.h"
-#include "HLEGraphics/TextureCache.h"
-#include "HLEGraphics/TextureInfo.h"
+#include "TextureCache.h"
+#include "TextureInfo.h"
 
 #include "Utility/Profiler.h"
+
+#include "DLDebug.h"
 
 #include <vector>
 #include <algorithm>
@@ -40,13 +40,13 @@ template<> bool CSingleton< CTextureCache >::Create()
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT_Q(mpInstance == nullptr);
 #endif
-	mpInstance = std::make_shared<CTextureCache>();
+	mpInstance = new CTextureCache();
 	return mpInstance != nullptr;
 }
 
 CTextureCache::CTextureCache()
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-:	mDebugMutex()
+:	mDebugMutex("TextureCache")
 #endif
 {
 	memset( mpCacheHashTable, 0, sizeof(mpCacheHashTable) );
@@ -59,8 +59,8 @@ CTextureCache::~CTextureCache()
 
 inline u32 CTextureCache::MakeHashIdxA( const TextureInfo & ti )
 {
-	u32 address = ti.GetLoadAddress();
-	u32 hash = (address >> (HASH_TABLE_BITS*2)) ^ (address >> HASH_TABLE_BITS) ^ address;
+	u32 address( ti.GetLoadAddress() );
+	u32 hash( (address >> (HASH_TABLE_BITS*2)) ^ (address >> HASH_TABLE_BITS) ^ address );
 
 	hash ^= ti.GetPalette() >> 2;			// Useful for palettised fonts, e.g in Starfox
 
@@ -75,9 +75,8 @@ inline u32 CTextureCache::MakeHashIdxB( const TextureInfo & ti )
 // Purge any textures that haven't been used recently
 void CTextureCache::PurgeOldTextures()
 {
-	#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	MutexLock lock(GetDebugMutex());
-	#endif
+
 	//
 	//	Erase expired textures in reverse order, which should require less
 	//	copying when large clumps of textures are released simultaneously.
@@ -108,16 +107,14 @@ void CTextureCache::PurgeOldTextures()
 
 void CTextureCache::DropTextures()
 {
-	#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	MutexLock lock(GetDebugMutex());
-	#endif
 
-	for( u32 i = 0; i < mTextures.size(); ++i)
+	for( u32 i {}; i < mTextures.size(); ++i)
 	{
 		delete mTextures[i];
 	}
 	mTextures.clear();
-	for( u32 i = 0; i < HASH_TABLE_SIZE; ++i )
+	for( u32 i {}; i < HASH_TABLE_SIZE; ++i )
 	{
 		mpCacheHashTable[i] = nullptr;
 	}
@@ -128,7 +125,7 @@ void CTextureCache::DropTextures()
 
 static void TextureCacheStat( u32 l1_hit, u32 l2_hit, u32 size )
 {
-	static u32 total_lookups = 0, total_l1_hits = 0, total_l2_hits = 0;
+	static u32 total_lookups {}, total_l1_hits {}, total_l2_hits {};
 
 	total_l1_hits += l1_hit;
 	total_l2_hits += l2_hit;
@@ -171,22 +168,16 @@ public:
 // Otherwise, create surfaces, and load texture into memory
 CachedTexture * CTextureCache::GetOrCreateCachedTexture(const TextureInfo & ti)
 {
-	DAEDALUS_PROFILE( "CTextureCache::GetOrCreateCachedTexture" );
-
-	if (ti.GetWidth() > 4096 || ti.GetHeight() > 4096)
-	{
-		DAEDALUS_ERROR("Texture is too large: %d x %d", ti.GetWidth(), ti.GetHeight());
-		return nullptr;
-	}
-
-	// NB: this is a no-op in normal builds.
-	#ifdef DAEDALUS_DEBUG_DISPLAYLIST
-	MutexLock lock(GetDebugMutex());
+	#ifdef DAEDALUS_ENABLE_PROFILING
+		DAEDALUS_PROFILE( "CTextureCache::GetOrCreateCachedTexture" );
 	#endif
+	// NB: this is a no-op in normal builds.
+	MutexLock lock(GetDebugMutex());
+
 	//
 	// Retrieve the texture from the cache (if it already exists)
 	//
-	u32	ixa = MakeHashIdxA( ti );
+	u32	ixa {MakeHashIdxA( ti )};
 	if( mpCacheHashTable[ixa] && mpCacheHashTable[ixa]->GetTextureInfo() == ti )
 	{
 		RECORD_CACHE_HIT( 1, 0 );
@@ -195,7 +186,7 @@ CachedTexture * CTextureCache::GetOrCreateCachedTexture(const TextureInfo & ti)
 		return mpCacheHashTable[ixa];
 	}
 
-	u32 ixb = MakeHashIdxB( ti );
+	u32 ixb {MakeHashIdxB( ti )};
 	if( mpCacheHashTable[ixb] && mpCacheHashTable[ixb]->GetTextureInfo() == ti )
 	{
 		RECORD_CACHE_HIT( 1, 0 );
@@ -234,7 +225,7 @@ CachedTexture * CTextureCache::GetOrCreateCachedTexture(const TextureInfo & ti)
 	return texture;
 }
 
-std::shared_ptr<CNativeTexture> CTextureCache::GetOrCreateTexture(const TextureInfo & ti)
+CRefPtr<CNativeTexture> CTextureCache::GetOrCreateTexture(const TextureInfo & ti)
 {
 	CachedTexture * base_texture = GetOrCreateCachedTexture(ti);
 	if (!base_texture)

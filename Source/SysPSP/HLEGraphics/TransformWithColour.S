@@ -58,7 +58,7 @@ next_vertex_colour_\function:
 	#	is still loaded, and merge it in after the rgb components are calculated by the lighting calc below
 	#	float eyespace_z = projected.z / projected.w;
 	#	fog_coeff = (eyespace_z * m_fFogMult) + m_fFogOffset;
-	#	mVtxProjected[i].Colour.w = clamp< f32 >( fog_coeff, 0.0f, 1.0f );
+	#	mVtxProjected[i].Colour.w = Clamp< f32 >( fog_coeff, 0.0f, 1.0f );
 	vmov.s		S200, S232					// get w component
 	vmov.s		S201, S222					// v = z
 	vrcp.s		S200, S200					// 1.0 / projected.w
@@ -102,7 +102,7 @@ next_vertex_colour_\function:
 	
 	# Load and normalise the RGBA colour
 	lv.s		S200, 12($a2)					// load colour word [a,b,g,r]
-	vuc2ifs.s	R200, S200             // R200 = [?,z,y,x]
+	.word		0xd0380000 | (8<<8) | (40)		// vuc2i.s	R200, S200					// R200 = [?,z,y,x]
 	vi2f.q		R200, R200, 23					// int -> float
 	vscl.q		R200, R200[w,z,y,x], S203		// R200 = [r * 1/256, g * 1/256, b * 1/256, a * 1/256]
 	

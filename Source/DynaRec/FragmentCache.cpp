@@ -17,23 +17,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
-
+#include "stdafx.h"
+#include "FragmentCache.h"
 
 #include <stdio.h>
-#include <algorithm>
-#include <cstring>
-#include <fstream>
 
-#include "DynaRec/AssemblyUtils.h"
-#include "DynaRec/CodeBufferManager.h"
-#include "DynaRec/DynaRecProfile.h"
-#include "DynaRec/Fragment.h"
-#include "DynaRec/FragmentCache.h"
+#include <algorithm>
+
+#include "Fragment.h"
+#include "CodeBufferManager.h"
+#include "DynaRecProfile.h"
+
 #include "Debug/DBGConsole.h"
+
 #include "Utility/Profiler.h"
-#include "SysPSP/Utility/PerfStats.h"
+#include "Utility/IO.h"
+
+#include "AssemblyUtils.h"
 
 
 //Define to show hash table statistics cache hit/miss
@@ -51,7 +51,7 @@ CFragmentCache::CFragmentCache()
 ,	mCachedFragmentAddress( 0 )
 ,	mpCachedFragment( nullptr )
 {
-	std::memset( mpCacheHashTable.data(), 0, mpCacheHashTable.size() * sizeof(mpCacheHashTable[0]));
+	memset( mpCacheHashTable, 0, sizeof(mpCacheHashTable) );
 
 	mFragments.reserve( 2000 );
 
@@ -70,6 +70,7 @@ CFragmentCache::~CFragmentCache()
 	Clear();
 
 	mpCodeBufferManager->Finalise();
+	delete mpCodeBufferManager;
 }
 
 //*************************************************************************************
@@ -102,11 +103,11 @@ CFragment * CFragmentCache::LookupFragment( u32 address ) const
 
 			// put in hash table
 			mpCacheHashTable[ix].addr = address;
-			mpCacheHashTable[ix].ptr = (uintptr_t)mpCachedFragment;
+			mpCacheHashTable[ix].ptr = reinterpret_cast< u32 >( mpCachedFragment );
 		}
 		else
 		{
-			mpCachedFragment = (CFragment *)mpCacheHashTable[ix].ptr;
+			mpCachedFragment = reinterpret_cast< CFragment * >( mpCacheHashTable[ix].ptr );
 		}
 	}
 
@@ -133,7 +134,7 @@ CFragment * CFragmentCache::LookupFragmentQ( u32 address ) const
 		mCachedFragmentAddress = address;
 
 		// check if in hash table
-		u32 ix = MakeHashIdx( address );
+		u32 ix {MakeHashIdx( address )};
 
 		if ( address != mpCacheHashTable[ix].addr )
 		{
@@ -153,7 +154,7 @@ CFragment * CFragmentCache::LookupFragmentQ( u32 address ) const
 
 			// put in hash table
 			mpCacheHashTable[ix].addr = address;
-			mpCacheHashTable[ix].ptr = reinterpret_cast< uintptr_t >( mpCachedFragment );
+			mpCacheHashTable[ix].ptr = reinterpret_cast< u32 >( mpCachedFragment );
 		}
 		else
 		{
@@ -195,7 +196,7 @@ void CFragmentCache::InsertFragment( CFragment * p_fragment )
 	// Update the hash table (it stores failed lookups now, so we need to be sure to purge any stale entries in there
 	u32 ix {MakeHashIdx( fragment_address )};
 	mpCacheHashTable[ix].addr = fragment_address;
-	mpCacheHashTable[ix].ptr = reinterpret_cast< uintptr_t >( p_fragment );
+	mpCacheHashTable[ix].ptr = reinterpret_cast< u32 >( p_fragment );
 
 	// Process any jumps for this before inserting new ones
 	JumpMap::iterator	jump_it( mJumpMap.find( fragment_address ) );
@@ -273,7 +274,6 @@ void CFragmentCache::InsertFragment( CFragment * p_fragment )
 //*************************************************************************************
 void CFragmentCache::Clear()
 {
-	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );
 #ifdef DAEDALUS_DEBUG_CONSOLE
 	if(CDebugConsole::IsAvailable())
 	{
@@ -292,7 +292,7 @@ void CFragmentCache::Clear()
 	mOutputLength = 0;
 	mCachedFragmentAddress = 0;
 	mpCachedFragment = nullptr;
-	std::memset( mpCacheHashTable.data(), 0, mpCacheHashTable.size() * sizeof(mpCacheHashTable[0]));
+	memset( mpCacheHashTable, 0, sizeof(mpCacheHashTable) );
 	mJumpMap.clear();
 
 	mCacheCoverage.Reset();
@@ -308,7 +308,101 @@ bool CFragmentCache::ShouldInvalidateOnWrite( u32 address, u32 length ) const
 	return mCacheCoverage.IsCovered( address, length );
 }
 
+#ifdef DAEDALUS_DEBUG_DYNAREC
+//*************************************************************************************
+//
+//*************************************************************************************
+struct SDescendingCyclesSort
+{
+     bool operator()(CFragment* const & a, CFragment* const & b)
+     {
+		return b->GetCyclesExecuted() < a->GetCyclesExecuted();
+     }
+};
 
+//*************************************************************************************
+//
+//*************************************************************************************
+void CFragmentCache::DumpStats( const char * outputdir ) const
+{
+	typedef std::vector< CFragment * >		FragmentList;
+	FragmentList		all_fragments;
+
+	all_fragments.reserve( mFragments.size() );
+
+	u32		total_cycles( 0 );
+
+	// Sort in order of expended cycles
+	for(FragmentVec::const_iterator it = mFragments.begin(); it != mFragments.end(); ++it)
+	{
+		all_fragments.push_back( it->Fragment );
+		total_cycles += it->Fragment->GetCyclesExecuted();
+	}
+
+	std::sort( all_fragments.begin(), all_fragments.end(), SDescendingCyclesSort() );
+
+
+	IO::Filename	filename;
+	IO::Filename	fragments_dir;
+
+	IO::Path::Assign( fragments_dir, outputdir );
+	IO::Path::Append( fragments_dir, "fragments" );
+	IO::Directory::EnsureExists( fragments_dir );
+
+	IO::Path::Combine( filename, outputdir, "fragments.html" );
+
+	FILE * fh( fopen( filename, "w" ) );
+	if(fh)
+	{
+		fputs( "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">", fh );
+		fputs( "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n", fh );
+		fputs( "<head><title>Fragments</title>\n", fh );
+		fputs( "<link rel=\"stylesheet\" href=\"default.css\" type=\"text/css\" media=\"all\" />\n", fh );
+		fputs( "</head><body>\n", fh );
+
+
+		fputs( "<h1>Fragments</h1>\n", fh );
+		fputs( "<div align=\"center\"><table>\n", fh );
+		fputs( "<tr><th>Address</th><th>Loops</th><th>Cycle Count</th><th>Cycle %</th><th>Hit Count</th><th>Input Bytes</th><th>Output Bytes</th><th>Expansion Ratio</th></tr>\n", fh );
+
+		for(FragmentList::const_iterator it = all_fragments.begin(); it != all_fragments.end(); ++it)
+		{
+			const CFragment * fragment( *it );
+
+			if (fragment->GetCyclesExecuted() == 0)
+				continue;
+
+			fputs( "<tr>", fh );
+			fprintf( fh, "<td><a href=\"fragments//%08x.html\">0x%08x</a></td>", fragment->GetEntryAddress(), fragment->GetEntryAddress() );
+			fprintf( fh, "<td>%s</td>", fragment->GetEntryAddress() == fragment->GetExitAddress() ? "*" : "&nbsp;" );
+			fprintf( fh, "<td>%d</td>", fragment->GetCyclesExecuted() );
+			fprintf( fh, "<td>%#.2f%%</td>", f32( fragment->GetCyclesExecuted() * 100.0f ) / f32( total_cycles ) );
+			fprintf( fh, "<td>%d</td>", fragment->GetHitCount() );
+			fprintf( fh, "<td>%d</td>", fragment->GetInputLength() );
+			fprintf( fh, "<td>%d</td>", fragment->GetOutputLength() );
+			fprintf( fh, "<td>%#.2f</td>", f32( fragment->GetOutputLength() ) / f32( fragment->GetInputLength() ) );
+			fputs( "</tr>\n", fh );
+
+			IO::Filename	fragment_path;
+			char			fragment_name[ 32+1 ];
+			sprintf( fragment_name, "%08x.html", fragment->GetEntryAddress() );
+			IO::Path::Combine( fragment_path, fragments_dir, fragment_name );
+
+			FILE * fragment_fh( fopen( fragment_path, "w" ) );
+			if( fragment_fh != nullptr )
+			{
+				fragment->DumpFragmentInfoHtml( fragment_fh, total_cycles );
+				fclose( fragment_fh );
+			}
+		}
+
+		fputs( "</table></div>\n", fh );
+		fputs( "</body></html>\n", fh );
+
+		fclose( fh );
+	}
+}
+#endif // DAEDALUS_DEBUG_DYNAREC
 
 
 //*************************************************************************************
@@ -321,8 +415,8 @@ bool CFragmentCache::ShouldInvalidateOnWrite( u32 address, u32 length ) const
 //*************************************************************************************
 void CFragmentCacheCoverage::ExtendCoverage( u32 address, u32 len )
 {
-	u32 first_entry = AddressToIndex( address );
-	u32 last_entry = AddressToIndex( address + len );
+	u32 first_entry( AddressToIndex( address ) );
+	u32 last_entry( AddressToIndex( address + len ) );
 
 	// Mark all entries as true
 	for( u32 i = first_entry; i <= last_entry && i < NUM_MEM_USAGE_ENTRIES; ++i )
@@ -343,8 +437,8 @@ bool CFragmentCacheCoverage::IsCovered( u32 address, u32 len ) const
 		return true;
 	}
 #endif
-	u32 first_entry = AddressToIndex( address );
-	u32 last_entry = AddressToIndex( address + len );
+	u32 first_entry( AddressToIndex( address ) );
+	u32 last_entry( AddressToIndex( address + len ) );
 
 	// Mark all entries as true
 	for( u32 i = first_entry; i <= last_entry && i < NUM_MEM_USAGE_ENTRIES; ++i )
@@ -359,95 +453,7 @@ bool CFragmentCacheCoverage::IsCovered( u32 address, u32 len ) const
 //*************************************************************************************
 //
 //*************************************************************************************
-
-#ifdef DAEDALUS_DEBUG_DYNAREC
-//*************************************************************************************
-//
-//*************************************************************************************
-struct SDescendingCyclesSort
-{
-     bool operator()(CFragment* const & a, CFragment* const & b)
-     {
-		return b->GetCyclesExecuted() < a->GetCyclesExecuted();
-     }
-};
-
-//*************************************************************************************
-//
-//*************************************************************************************
-void CFragmentCache::DumpStats( const std::filesystem::path outputdir ) const
-{
-
-	using FragmentList = std::vector< CFragment *>;
-	
-	FragmentList		all_fragments;
-
-	all_fragments.reserve( mFragments.size() );
-
-	u32		total_cycles( 0 );
-
-	// Sort in order of expended cycles
-	for(FragmentVec::const_iterator it = mFragments.begin(); it != mFragments.end(); ++it)
-	{
-		all_fragments.push_back( it->Fragment );
-		total_cycles += it->Fragment->GetCyclesExecuted();
-	}
-
-	std::sort( all_fragments.begin(), all_fragments.end(), SDescendingCyclesSort() );
-
-
-	std::filesystem::path filename = "fragments.html";
-	std::filesystem::path fragments_dir = setbasePath("fragments");
-	fragments_dir /= filename;
-
-
-	std::ofstream fh(filename);
-    if (fh.is_open())
-	 {
-        fh << "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n";
-        fh << "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n";
-        fh << "<head><title>Fragments</title>\n";
-        fh << "<link rel=\"stylesheet\" href=\"default.css\" type=\"text/css\" media=\"all\" />\n";
-        fh << "</head><body>\n";
-
-        fh << "<h1>Fragments</h1>\n";
-        fh << "<div align=\"center\"><table>\n";
-        fh << "<tr><th>Address</th><th>Loops</th><th>Cycle Count</th><th>Cycle %</th><th>Hit Count</th><th>Input Bytes</th><th>Output Bytes</th><th>Expansion Ratio</th></tr>\n";
-
-        for (auto it = all_fragments.begin(); it != all_fragments.end(); ++it) {
-            const CFragment* fragment = *it;
-
-            if (fragment->GetCyclesExecuted() == 0)
-                continue;
-
-            fh << "<tr>";
-            fh << "<td><a href=\"fragments//" << std::hex << std::setw(8) << std::setfill('0') << fragment->GetEntryAddress() << ".html\">"
-               << "0x" << std::hex << std::setw(8) << std::setfill('0') << fragment->GetEntryAddress() << "</a></td>";
-            fh << "<td>" << (fragment->GetEntryAddress() == fragment->GetExitAddress() ? "*" : "&nbsp;") << "</td>";
-            fh << "<td>" << fragment->GetCyclesExecuted() << "</td>";
-            fh << "<td>" << std::fixed << std::setprecision(2) << (static_cast<float>(fragment->GetCyclesExecuted()) * 100.0f / total_cycles) << "%</td>";
-            fh << "<td>" << fragment->GetHitCount() << "</td>";
-            fh << "<td>" << fragment->GetInputLength() << "</td>";
-            fh << "<td>" << fragment->GetOutputLength() << "</td>";
-            fh << "<td>" << std::fixed << std::setprecision(2) << (static_cast<float>(fragment->GetOutputLength()) / fragment->GetInputLength()) << "</td>";
-            fh << "</tr>\n";
-
-            std::string fragment_name = fragments_dir + "/" + std::to_string(fragment->GetEntryAddress()) + ".html";
-            std::ofstream fragment_fh(fragment_name);
-            if (fragment_fh.is_open()) {
-                fragment->DumpFragmentInfoHtml(fragment_fh, total_cycles);
-                fragment_fh.close();
-            }
-        }
-
-        fh << "</table></div>\n";
-        fh << "</body></html>\n";
-	}
-}
-#endif // DAEDALUS_DEBUG_DYNAREC
-
 void CFragmentCacheCoverage::Reset( )
 {
-	std::fill(std::begin(mCacheCoverage), std::end(mCacheCoverage), 0);
-		// std::memset( mCacheCoverage.data(), false, mCacheCoverage.size() * sizeof( mCacheCoverage ) );
+	memset( mCacheCoverage, 0, sizeof( mCacheCoverage ) );
 }

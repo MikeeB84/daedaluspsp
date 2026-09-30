@@ -22,10 +22,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef CORE_MEMORY_H_
 #define CORE_MEMORY_H_
 
-#include "Ultra/ultra_rcp.h"
-#include "System/AtomicPrimitives.h"
-#include "System/Endian.h"
-#include <array>
+#include "OSHLE/ultra_rcp.h"
+#include "Utility/AtomicPrimitives.h"
+#include "Utility/Endian.h"
 
 enum MEMBANKTYPE
 {
@@ -58,8 +57,9 @@ enum MEMBANKTYPE
 static const u32 MEMORY_4_MEG( 4*1024*1024 );
 static const u32 MEMORY_8_MEG( 8*1024*1024 );
 #define MAX_RAM_ADDRESS MEMORY_8_MEG
-using mReadFunction = const void * (*)(u32 address);
-using mWriteFunction = void(*)(u32 address, u32 value); 
+
+typedef void * (*mReadFunction )( u32 address );
+typedef void (*mWriteFunction )( u32 address, u32 value );
 
 struct MemFuncWrite
 {
@@ -78,7 +78,6 @@ extern u32		gRamSize;
 extern u32		gTLBReadHit;
 extern u32		gTLBWriteHit;
 #endif
-
 extern void *	g_pMemoryBuffers[NUM_MEM_BUFFERS];
 extern const u32 MemoryRegionSizes[NUM_MEM_BUFFERS];
 
@@ -88,18 +87,18 @@ bool			Memory_Reset();
 void			Memory_Cleanup();
 
 
-using MemFastFunction = void * (*)(u32 address);
-using MemWriteValueFunction = void (*)(u32 address, u32 value);
+typedef void * (*MemFastFunction )( u32 address );
+typedef void (*MemWriteValueFunction )( u32 address, u32 value );
 
 #ifndef DAEDALUS_SILENT
-using InternalMemFastFunction = bool (*)(u32 address, void ** p_translated);
+typedef bool (*InternalMemFastFunction)( u32 address, void ** p_translated );
 #endif
 
 extern MemFuncRead  				g_MemoryLookupTableRead[0x4000];
 extern MemFuncWrite 				g_MemoryLookupTableWrite[0x4000];
 
 // Fast memory access
-inline const void* ReadAddress( u32 address )
+inline void* DAEDALUS_ATTRIBUTE_CONST ReadAddress( u32 address )
 {
 	const MemFuncRead & m( g_MemoryLookupTableRead[ address >> 18 ] );
 
@@ -242,21 +241,40 @@ extern u8 * g_pu8RamBase_8000;
 //extern u8 * g_pu8RamBase_A000;
 
 
+//#define MEMORY_CHECK_ALIGN( address, align )	DAEDALUS_ASSERT( (address & ~(align-1)) == 0, "Unaligned memory access" )
+#define MEMORY_CHECK_ALIGN( address, align )
 
-inline u64 Read64Bits( u32 address )				{ u64 data = *(u64 *)ReadAddress( address ); data = (data>>32) + (data<<32); return data; }
-inline u32 Read32Bits( u32 address )				{ return *(u32 *)ReadAddress( address ); }
-inline u16 Read16Bits( u32 address )				{ return *(u16 *)ReadAddress( address ^ U16_TWIDDLE ); }
-inline u8 Read8Bits( u32 address )					{ return *(u8  *)ReadAddress( address ^ U8_TWIDDLE ); }
+#if (DAEDALUS_ENDIAN_MODE == DAEDALUS_ENDIAN_BIG)
 
-inline void Write64Bits( u32 address, u64 data )	{ *(u64 *)ReadAddress( address ) = (data>>32) + (data<<32); }
-inline void Write32Bits( u32 address, u32 data )	{ WriteAddress(address, data); }
-inline void Write16Bits( u32 address, u16 data )	{ *(u16 *)ReadAddress(address ^ U16_TWIDDLE) = data; }
-inline void Write8Bits( u32 address, u8 data )		{ *(u8 *)ReadAddress(address ^ U8_TWIDDLE) = data;}
+inline u64 Read64Bits( u32 address )				{ MEMORY_CHECK_ALIGN( address, 8 ); return *(u64 *)ReadAddress( address ); }
+inline u32 Read32Bits( u32 address )				{ MEMORY_CHECK_ALIGN( address, 4 ); return *(u32 *)ReadAddress( address ); }
+inline u16 Read16Bits( u32 address )				{ MEMORY_CHECK_ALIGN( address, 2 ); return *(u16 *)ReadAddress( address ); }
+inline u8 Read8Bits( u32 address )					{                                   return *(u8  *)ReadAddress( address ); }
 
+inline void Write64Bits( u32 address, u64 data )	{ MEMORY_CHECK_ALIGN( address, 8 ); *(u64 *)ReadAddress( address ) = data; }
+inline void Write32Bits( u32 address, u32 data )	{ MEMORY_CHECK_ALIGN( address, 4 ); WriteAddress(address, data); }
+inline void Write16Bits( u32 address, u16 data )	{ MEMORY_CHECK_ALIGN( address, 2 ); *(u16 *)ReadAddress(address) = data; }
+inline void Write8Bits( u32 address, u8 data )		{                                   *(u8 *)ReadAddress(address) = data;}
 
-//inline void Write64Bits_NoSwizzle( u32 address, u64 data ){ *(u64 *)WriteAddress( address ) = (data>>32) + (data<<32); }
-inline void Write32Bits_NoSwizzle( u32 address, u32 data )	{ WriteAddress(address, data); }
-inline void Write16Bits_NoSwizzle( u32 address, u16 data )	{  *(u16 *)ReadAddress(address) = data; }
+#elif (DAEDALUS_ENDIAN_MODE == DAEDALUS_ENDIAN_LITTLE)
+
+inline u64 Read64Bits( u32 address )				{ MEMORY_CHECK_ALIGN( address, 8 ); u64 data = *(u64 *)ReadAddress( address ); data = (data>>32) + (data<<32); return data; }
+inline u32 Read32Bits( u32 address )				{ MEMORY_CHECK_ALIGN( address, 4 ); return *(u32 *)ReadAddress( address ); }
+inline u16 Read16Bits( u32 address )				{ MEMORY_CHECK_ALIGN( address, 2 ); return *(u16 *)ReadAddress( address ^ U16_TWIDDLE ); }
+inline u8 Read8Bits( u32 address )					{                                   return *(u8  *)ReadAddress( address ^ U8_TWIDDLE ); }
+
+inline void Write64Bits( u32 address, u64 data )	{ MEMORY_CHECK_ALIGN( address, 8 ); *(u64 *)ReadAddress( address ) = (data>>32) + (data<<32); }
+inline void Write32Bits( u32 address, u32 data )	{ MEMORY_CHECK_ALIGN( address, 4 ); WriteAddress(address, data); }
+inline void Write16Bits( u32 address, u16 data )	{ MEMORY_CHECK_ALIGN( address, 2 ); *(u16 *)ReadAddress(address ^ U16_TWIDDLE) = data; }
+inline void Write8Bits( u32 address, u8 data )		{                                   *(u8 *)ReadAddress(address ^ U8_TWIDDLE) = data;}
+
+#else
+#error No DAEDALUS_ENDIAN_MODE specified
+#endif //DAEDALUS_ENDIAN_MODE
+
+//inline void Write64Bits_NoSwizzle( u32 address, u64 data ){ MEMORY_CHECK_ALIGN( address, 8 ); *(u64 *)WriteAddress( address ) = (data>>32) + (data<<32); }
+inline void Write32Bits_NoSwizzle( u32 address, u32 data )	{ MEMORY_CHECK_ALIGN( address, 4 ); WriteAddress(address, data); }
+inline void Write16Bits_NoSwizzle( u32 address, u16 data )	{ MEMORY_CHECK_ALIGN( address, 2 ); *(u16 *)ReadAddress(address) = data; }
 inline void Write8Bits_NoSwizzle( u32 address, u8 data )	{                                   *(u8 *)ReadAddress(address) = data;}
 
 /////////////////////////////////////////////////////

@@ -18,19 +18,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include "stdafx.h"
+#include "IniFile.h"
 
-#include "Base/Types.h"
+#include <stdio.h>
 
-
-#include <cstring>
+#include <string>
 #include <vector>
 #include <map>
 #include <algorithm>
-#include <fstream>
-#include <iostream>
 
-
-#include "Utility/IniFile.h"
 #include "Utility/StringUtil.h"
 
 //*****************************************************************************
@@ -52,17 +49,17 @@ class IIniFileProperty : public CIniFileProperty
 		{
 			const char * str( mValue.c_str() );
 
-			if( strcasecmp( str, "yes" ) == 0 ||
-				strcasecmp( str, "true" ) == 0 ||
-				strcasecmp( str, "1" ) == 0 ||
-				strcasecmp( str, "on" ) == 0 )
+			if( _strcmpi( str, "yes" ) == 0 ||
+				_strcmpi( str, "true" ) == 0 ||
+				_strcmpi( str, "1" ) == 0 ||
+				_strcmpi( str, "on" ) == 0 )
 			{
 				return true;
 			}
-			if( strcasecmp( str, "no" ) == 0 ||
-				strcasecmp( str, "false" ) == 0 ||
-				strcasecmp( str, "0" ) == 0 ||
-				strcasecmp( str, "off" ) == 0 )
+			if( _strcmpi( str, "no" ) == 0 ||
+				_strcmpi( str, "false" ) == 0 ||
+				_strcmpi( str, "0" ) == 0 ||
+				_strcmpi( str, "off" ) == 0 )
 			{
 				return false;
 			}
@@ -126,7 +123,7 @@ class IIniFileSection : public CIniFileSection
 
 	private:
 
-using PropertyVec = std::vector< const IIniFileProperty*>;
+		typedef std::vector< const IIniFileProperty * >	PropertyVec;
 
 		struct SCompareProperties
 		{
@@ -210,7 +207,7 @@ class IIniFile : public CIniFile
 		//
 		// CIniFile implementation
 		//
-		virtual bool					Open( const std::filesystem::path &filename );
+		virtual bool					Open( const char * filename );
 
 		virtual const CIniFileSection *	GetDefaultSection() const;
 
@@ -295,10 +292,9 @@ static bool	trim( char * p_string, const char * p_trim_chars )
 //*****************************************************************************
 //
 //*****************************************************************************
-std::unique_ptr<CIniFile> CIniFile::Create( const std::filesystem::path &filename )
+CIniFile *	CIniFile::Create( const char * filename )
 {
-	auto p_file = std::make_unique<IIniFile>();
-	
+	IIniFile * p_file( new IIniFile );
 	if( p_file != NULL )
 	{
 		if( p_file->Open( filename ) )
@@ -306,7 +302,7 @@ std::unique_ptr<CIniFile> CIniFile::Create( const std::filesystem::path &filenam
 			return p_file;
 		}
 
-		// delete p_file;
+		delete p_file;
 	}
 
 	return NULL;
@@ -315,54 +311,51 @@ std::unique_ptr<CIniFile> CIniFile::Create( const std::filesystem::path &filenam
 //*****************************************************************************
 //
 //*****************************************************************************
-bool IIniFile::Open( const std::filesystem::path &filename )
+bool IIniFile::Open( const char * filename )
 {
 	const u32	BUFFER_LEN = 1024;
 	char		readinfo[BUFFER_LEN+1];
 	const char	trim_chars[]="{}[]"; //remove first and last character
-	std::ifstream inifile(filename);
 
-	if (!inifile)
-	{	
-		std::cerr << "INI File: " << filename << " not found" << std::endl;
+	FILE * fh( fopen( filename, "r" ) );
+	if (fh == NULL)
+	{
 		return false;
 	}
-	std::cout << "Loading INI File: " << filename << std::endl;
 
 	//
 	//	By default start with the default section
 	//
 	mpDefaultSection = new IIniFileSection( "" );
-	IIniFileSection * p_current_section = mpDefaultSection;
+	IIniFileSection * p_current_section( mpDefaultSection );
 	readinfo[BUFFER_LEN] = '\0';
 
-	std::string line;
-	while (std::getline(inifile, line))
+	// XXXX Using fgets needs reworking...
+	while (fgets( readinfo, BUFFER_LEN, fh ) != NULL)
 	{
-		std::strncpy(readinfo, line.c_str(), BUFFER_LEN);
-		readinfo[BUFFER_LEN] = '\0';
+		Tidy(readinfo);			// Strip spaces from end of lines
 
-		Tidy(readinfo); // Strip Spaces from end of line
-
-		// Handle Comments
+		// Handle comments
 		if (readinfo[0] == '/')
 			continue;
-	
-		// Check that line isn't empty
-		if (*readinfo != 0 )
+
+		// Check that the line isn't empty
+		if (*readinfo != 0)
 		{
+			// Check for a section heading
 			if (readinfo[0] == '{' || readinfo[0] == '[')
 			{
-				trim(readinfo, trim_chars);
+				trim(readinfo,trim_chars);
 
-				p_current_section = new IIniFileSection(readinfo);
-				mSections.push_back(p_current_section);
+				p_current_section = new IIniFileSection( readinfo );
+
+				mSections.push_back( p_current_section );
 			}
 			else
 			{
-				char* key;
-				char* value;
-				char* equals_idx = std::strchr(readinfo, '=');
+				char *key, *value;
+
+				char *	equals_idx = strchr(readinfo, '=');
 				if( equals_idx != NULL)
 				{
 					*equals_idx = '\0';
@@ -374,6 +367,7 @@ bool IIniFile::Open( const std::filesystem::path &filename )
 					key = &readinfo[0];
 					value = NULL;
 				}
+
 				Tidy( key );
 				Tidy( value );
 				#ifdef DAEDALUS_ENABLE_ASSERTS
@@ -385,6 +379,7 @@ bool IIniFile::Open( const std::filesystem::path &filename )
 			}
 		}
 	}
+	fclose(fh);
 	return true;
 }
 

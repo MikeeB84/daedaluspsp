@@ -22,9 +22,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DEBUG_DBGCONSOLE_H_
 #define DEBUG_DBGCONSOLE_H_
 
-#include "Base/Types.h"
-#include "Base/Singleton.h"
-#include "Base/Macros.h"
+#include "Utility/DaedalusTypes.h"
+#include "Utility/Singleton.h"
+#include "Utility/Macros.h"
 
 #ifdef DAEDALUS_DEBUG_CONSOLE
 
@@ -33,10 +33,10 @@ class CDebugConsole : public CSingleton< CDebugConsole >
 	public:
 		virtual ~CDebugConsole();
 
-		virtual void Msg( u32 type, const char * format, ... ) = 0;
+		virtual void DAEDALUS_VARARG_CALL_TYPE	Msg( u32 type, const char * format, ... ) = 0;
 
 		virtual void							MsgOverwriteStart() = 0;
-		virtual void MsgOverwrite( u32 type, const char * format, ... ) = 0;
+		virtual void DAEDALUS_VARARG_CALL_TYPE	MsgOverwrite( u32 type, const char * format, ... ) = 0;
 		virtual void							MsgOverwriteEnd() = 0;
 };
 

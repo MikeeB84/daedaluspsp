@@ -20,16 +20,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DYNAREC_FRAGMENT_H_
 #define DYNAREC_FRAGMENT_H_
 
-
+#include "Trace.h"
+#include "RegisterSpan.h"
 
 #include "Core/R4300Instruction.h"
 
-#include "DynaRec/AssemblyUtils.h"
-#include "DynaRec/Trace.h"
-#include "DynaRec/RegisterSpan.h"
+#include "AssemblyUtils.h"
 
 #include <vector>
-#include <memory>
+
 //*************************************************************************************
 //	Enable this to allow simulation of the buffer rather than direct execution
 //*************************************************************************************
@@ -55,21 +54,21 @@ struct SFragmentPatchDetails
 	u32				Address;
 	CJumpLocation	Jump;
 };
-using FragmentPatchList = std::vector<SFragmentPatchDetails>;
+typedef std::vector<SFragmentPatchDetails>	FragmentPatchList;
 
 //*************************************************************************************
 //
 //*************************************************************************************
 class CFragment
 {
-	using TraceBuffer = std::vector<STraceEntry>;
-	using BranchBuffer = std::vector<SBranchDetails>;
+	typedef std::vector<STraceEntry>		TraceBuffer;
+	typedef std::vector<SBranchDetails>		BranchBuffer;
 public:
-		CFragment( std::shared_ptr<CCodeBufferManager> p_manager, u32 entry_address, u32 exit_address,
+		CFragment( CCodeBufferManager * p_manager, u32 entry_address, u32 exit_address,
 			const TraceBuffer & trace, SRegisterUsageInfo &	register_usage, const BranchBuffer & branch_details, bool need_indirect_exit_map );
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
-		CFragment(std::shared_ptr<CCodeBufferManager> p_manager, u32 entry_address, u32 input_length, void* function_Ptr);
-		void		Assemble( std::shared_ptr<CCodeBufferManager> p_manager, CCodeLabel native_function);
+		CFragment(CCodeBufferManager * p_manager, u32 entry_address, u32 input_length, void* function_Ptr);
+		void		Assemble( CCodeBufferManager * p_manager, CCodeLabel native_function);
 #endif
 		~CFragment();
 
@@ -100,7 +99,7 @@ public:
 
 private:
 		void		Analyse( const std::vector< STraceEntry > & trace, SRegisterUsageInfo & register_usage );
-		void		Assemble( std::shared_ptr<CCodeBufferManager> p_manager, u32 exit_address, const std::vector< STraceEntry > & trace, const std::vector<SBranchDetails> & branch_details, const SRegisterUsageInfo & register_usage );
+		void		Assemble( CCodeBufferManager * p_manager, u32 exit_address, const std::vector< STraceEntry > & trace, const std::vector<SBranchDetails> & branch_details, const SRegisterUsageInfo & register_usage );
 
 		void		AddPatch( u32 address, CJumpLocation jump_location );
 

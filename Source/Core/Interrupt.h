@@ -20,8 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef CORE_INTERRUPT_H_
 #define CORE_INTERRUPT_H_
 
-#include "Core/CPU.h"
-#include "Ultra/ultra_R4300.h"
+#include "CPU.h"
+#include "OSHLE/ultra_R4300.h"
 
 
 void R4300_Exception_TLB( u32 virtual_address, u32 exception_code, u32 exception_vector );

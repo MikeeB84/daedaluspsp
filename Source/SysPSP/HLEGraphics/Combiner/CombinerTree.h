@@ -22,8 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef SYSPSP_HLEGRAPHICS_COMBINER_COMBINERTREE_H_
 #define SYSPSP_HLEGRAPHICS_COMBINER_COMBINERTREE_H_
 
-#include "Base/Types.h"
-#include "SysPSP/HLEGraphics/Combiner/CombinerInput.h"
+#include "Utility/DaedalusTypes.h"
+#include "CombinerInput.h"
 
 class CAlphaRenderSettings;
 class CBlendStates;

@@ -1,10 +1,8 @@
-
-#include "Base/Types.h"
+#include "stdafx.h"
 
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 
 #include <pspgu.h>
 #include <pspkernel.h>
@@ -12,14 +10,12 @@
 #include <pspctrl.h>
 #include <kubridge.h>
 
-#include "Interface/ConfigOptions.h"
+#include "Config/ConfigOptions.h"
 #include "Core/CPU.h"
 #include "Core/ROM.h"
-#include "RomFile/RomSettings.h"
+#include "Core/RomSettings.h"
 #include "Debug/Dump.h"
-#include "Debug/PrintOpCode.h"
-#include "Core/Memory.h"
-#include "SysPSP/Utility/PerfStats.h"
+#include "Utility/PrintOpCode.h"
 
 
 PspDebugRegBlock *exception_regs;
@@ -79,26 +75,13 @@ static void DumpInformation(PspDebugRegBlock * regs)
 				regName[i+3], ( ((u32)regs->r[i+3] >= RDRAM_base) & ((u32)regs->r[i+3] <= RDRAM_end) ) ? "*" : ":", (int)regs->r[i+3]);
 	}
 
-	// What the emulator was doing (only tracked while "Display Framerate" shows timing)
-	{
-		static const char * const kCategoryNames[] = { "CPU other", "CPU interpreter", "CPU compiled code", "CPU compiling",
-			"Graphics", "Graphics vertex", "Graphics texture", "Graphics draw", "Audio", "GPU wait", "Frame limiter" };
-		u32 depth = PerfStatsInternal::gDepth;
-		u32 category = depth > 0 ? PerfStatsInternal::gStack[ (depth <= PerfStatsInternal::kMaxDepth ? depth : PerfStatsInternal::kMaxDepth) - 1 ] : 0;
-		fprintf(fp, "\nEmulator activity: %s%s\n", category < NUM_PERF_CATEGORIES ? kCategoryNames[ category ] : "?",
-			gPerfStatsEnabled ? "" : " (timing display off, not tracked)");
-		fprintf(fp, "Last compiled fragment entered (N64): %08x\n", (u32)gPerfFragmentEntry);
-	}
-
+#ifndef DAEDALUS_SILENT
+	fprintf(fp, "\nDisassembly (PSP):\n");
 	u32 inst_before_epc = 24;
 	u32 inst_after_epc = 24;
-	fprintf(fp, "\nDisassembly (PSP):\n");
-	// Only read code from main user memory, in case the PC itself is bad
-	const u32 psp_code_start = ( (u32)regs->epc & ~3 ) - inst_before_epc * 4;
-	const bool psp_code_readable = ( psp_code_start >= 0x08800000 ) && ( (u32)regs->epc + inst_after_epc * 4 < 0x0A000000 );
-	const OpCode * p( (OpCode *)psp_code_start );
+	const OpCode * p( (OpCode *)(regs->epc - (inst_before_epc * 4)) );
 
-	while( psp_code_readable && p < (OpCode *)((regs->epc & ~3) + (inst_after_epc * 4)) )
+	while( p < (OpCode *)(regs->epc + (inst_after_epc * 4)) )
 	{
 		char opinfo[128];
 
@@ -109,6 +92,7 @@ static void DumpInformation(PspDebugRegBlock * regs)
 
 		++p;
 	}
+#endif
 
 	// output FPU Regs
 	fprintf(fp, "\nFPU registers (PSP):\n");
@@ -120,7 +104,7 @@ static void DumpInformation(PspDebugRegBlock * regs)
 	fprintf(fp, "\nRom Infomation:\n");
 	{
 		fprintf(fp, "\tClockrate:       0x%08x\n", g_ROM.rh.ClockRate);
-		fprintf(fp, "\tBootAddr:        0x%08x\n", BSWAP32(g_ROM.rh.BootAddress));
+		fprintf(fp, "\tBootAddr:        0x%08x\n", SwapEndian(g_ROM.rh.BootAddress));
 		fprintf(fp, "\tRelease:         0x%08x\n", g_ROM.rh.Release);
 		fprintf(fp, "\tCRC1:            0x%08x\n", g_ROM.rh.CRC1);
 		fprintf(fp, "\tCRC2:            0x%08x\n", g_ROM.rh.CRC2);
@@ -160,31 +144,28 @@ static void DumpInformation(PspDebugRegBlock * regs)
 		fprintf(fp, "Last known PC (N64): %08x\n", gCPUState.CurrentPC);
 	}
 
+#ifndef DAEDALUS_SILENT
 	fprintf(fp, "\nDisassembly (N64):\n");
+	inst_before_epc = 24;
+	inst_after_epc = 24;
 
-	// KSEG0/KSEG1 addresses map directly onto RDRAM (TLB mapped code isn't listed)
-	u8 * p_base = nullptr;
-	if( ( gCPUState.CurrentPC & 0xC0000000 ) == 0x80000000 && ( gCPUState.CurrentPC & 0x1FFFFFFF ) < gRamSize )
-	{
-		p_base = g_pu8RamBase + ( gCPUState.CurrentPC & 0x1FFFFFFF );
-	}
-	// Only if the PC maps into RDRAM (at least inst_before_epc instructions in)
-	const bool n64_code_readable = ( (u32)p_base >= RDRAM_base + inst_before_epc * 4 ) && ( (u32)p_base + inst_after_epc * 4 <= RDRAM_end );
+	u8 * p_base;
+	Memory_GetInternalReadAddress(gCPUState.CurrentPC-32, (void**)&p_base);
 	const OpCode * op_start( reinterpret_cast< const OpCode * >( p_base - inst_before_epc * 4) );
 	const OpCode * op_end(   reinterpret_cast< const OpCode * >( p_base + inst_after_epc * 4 ) );
 
-	while( n64_code_readable && op_start < op_end )
+	while( op_start < op_end )
 	{
 		char opinfo[128];
 
 		OpCode op( *op_start );
 
-		const u32 n64_address = gCPUState.CurrentPC + (u32)( (const u8 *)op_start - p_base );
-		SprintOpCodeInfo( opinfo, n64_address, op );
-		fprintf(fp, "\t%s%08x: <0x%08x> %s\n",(u32)p_base == (u32)op_start ? "*":" ", n64_address, op._u32, opinfo);
+		SprintOpCodeInfo( opinfo, (u32)op_start, op );
+		fprintf(fp, "\t%s%p: <0x%08x> %s\n",(u32)p_base == (u32)op_start ? "*":" ", op_start, op._u32, opinfo);
 
 		++op_start;
 	}
+#endif
 
 	fclose(fp);
 }
@@ -194,7 +175,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 	const u32 RDRAM_base {(u32)g_pu8RamBase};
 	const u32 RDRAM_end {(u32)g_pu8RamBase + 8 * 1024 * 1024 - 1};
     SceCtrlData pad;
-	bool mustExit {false};
+	bool exit {false};
 
 	pspDebugScreenInit();
     pspDebugScreenSetBackColor(0x00FF0000);
@@ -208,7 +189,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 	u32 scroll_epc	{(u32)regs->epc};
 #endif
 
-	while( !mustExit )
+	while( !exit )
 	{
 		pspDebugScreenClear();
 		pspDebugScreenPrintf("Exception[%s] RDRAM[%08X:%08X]\n\n", codeTxt[(regs->cause >> 2) & 31], (int)RDRAM_base, (int)RDRAM_end );
@@ -262,12 +243,12 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 			if (pad.Buttons & PSP_CTRL_CROSS)
 			{
 				DumpInformation(regs);
-				mustExit = true;
+				exit = true;
 				update = true;
 			}
 			else if (pad.Buttons & PSP_CTRL_CIRCLE)
 			{
-				mustExit = true;
+				exit = true;
 				update = true;
 			}
 			else if (pad.Buttons & PSP_CTRL_UP)
@@ -292,12 +273,12 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 			if (pad.Buttons & PSP_CTRL_CROSS)
 			{
 				DumpInformation(regs);
-				mustExit = true;
+				exit = true;
 				update = true;
 			}
 			else if (pad.Buttons & PSP_CTRL_CIRCLE)
 			{
-				mustExit = true;
+				exit = true;
 				update = true;
 			}
 		}
@@ -305,7 +286,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 
 	}
 
-	exit(1);
+	sceKernelExitGame();
 }
 
 void initExceptionHandler()
@@ -320,7 +301,7 @@ void initExceptionHandler()
    option.position = 0;
    option.access = 1;
 
-   if((modid = sceKernelLoadModule("Plugins/exception.prx", 0, &option)) >= 0)
+   if((modid = sceKernelLoadModule("exception.prx", 0, &option)) >= 0)
    {
       args[0] = (int)ExceptionHandler;
       args[1] = (int)&exception_regs;

@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <string.h>
 
-#include "DynaRec/AssemblyUtils.h"
+#include "AssemblyUtils.h"
 
 class CAssemblyBuffer
 {
@@ -38,8 +38,8 @@ class CAssemblyBuffer
 
 		inline void	PadTo16Bytes()
 		{
-			mCurrentPos = (mCurrentPos - 1) & 0xfffffff0;
-			mCurrentPos = mCurrentPos + 0x10; // align to 16-byte boundary
+			// FIXME: warning: operation on �((CAssemblyBuffer*)this)->CAssemblyBuffer::mCurrentPos� may be undefined [-Wsequence-point]
+			mCurrentPos = (--mCurrentPos & 0xfffffff0) + 0x10; // align to 16-byte boundary
 		}
 
 		inline void EmitBYTE(u8 byte)
@@ -60,12 +60,6 @@ class CAssemblyBuffer
 			mCurrentPos += 4;
 		}
 
-		inline void EmitQWORD(u64 qword)
-		{
-			*(u64 *)(&mpWritePointer[mCurrentPos]) = qword;
-			mCurrentPos += 8;
-		}
-
 		void EmitData( const void * pdata, u32 count )
 		{
 			memcpy( &mpWritePointer[ mCurrentPos ], pdata, count );
@@ -82,7 +76,7 @@ class CAssemblyBuffer
 			mpCodeBuffer = pbuffer;
 
 			// For the PSP we don't want to cache our writes, ToDo:why?
-			mpWritePointer = (u8*)make_uncached_ptr(mpCodeBuffer);
+			mpWritePointer = (u8*)MAKE_UNCACHED_PTR(mpCodeBuffer);
 			//ToDo: Test this
 			//mpWritePointer = mpCodeBuffer;
 			mCurrentPos = 0;

@@ -17,50 +17,48 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
-#include <iostream>
+#include "stdafx.h"
+#include "patch.h"
 
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 
 #include <stddef.h>		// offsetof
-#include <cstring>
-#include <fstream>
 
-#include "Interface/ConfigOptions.h"
+#include "patch_symbols.h"
+#include "OS.h"
+#include "OSMesgQueue.h"
+
+#include "Config/ConfigOptions.h"
 #include "Core/CPU.h"
 #include "Core/DMA.h"
 #include "Core/Memory.h"
 #include "Core/R4300.h"
-#include "Debug/Registers.h"
+#include "Core/Registers.h"
 #include "Core/ROM.h"
 #include "Debug/DBGConsole.h"
 #include "Debug/DebugLog.h"
 #include "Debug/Dump.h"
 #include "DynaRec/Fragment.h"
 #include "DynaRec/FragmentCache.h"
-
-#include "OSHLE/OS.h"
-#include "OSHLE/OSMesgQueue.h"
-#include "OSHLE/patch.h"
-#include "OSHLE/patch_symbols.h"
-#include "Ultra/ultra_os.h"
-#include "Ultra/ultra_R4300.h"
-#include "Ultra/ultra_rcp.h"
-#include "Ultra/ultra_sptask.h"
-#include "HLEAudio/AudioPlugin.h"
+#include "Math/Math.h"	// VFPU Math
+#include "OSHLE/ultra_os.h"
+#include "OSHLE/ultra_R4300.h"
+#include "OSHLE/ultra_rcp.h"
+#include "OSHLE/ultra_sptask.h"
+#include "Plugins/AudioPlugin.h"
 #include "Utility/CRC.h"
-#include "System/Endian.h"
+#include "Utility/Endian.h"
 #include "Utility/FastMemcpy.h"
 #include "Utility/Profiler.h"
-#include "Utility/Paths.h"
 
+#ifdef DAEDALUS_PSP
 #include "Graphics/GraphicsContext.h"
-#include "intraFont.h"
+#include "SysPSP/Graphics/intraFont/intraFont.h"
+#endif
 
 #ifdef DUMPOSFUNCTIONS
 #include "Debug/Dump.h"
-
+#include "Utility/IO.h"
 
 static const char * const gEventStrings[23] =
 {
@@ -177,9 +175,9 @@ void Patch_PatchAll()
 	}
 #ifdef DUMPOSFUNCTIONS
 	FILE *fp;
-	std::filesystem::path path;
+	IO::Filename path;
 	Dump_GetDumpDirectory(path, "");
-	path / "n64.cfg";
+	IO::Path::Append(path, "n64.cfg");
 	fp = fopen(path, "w");
 #endif
 	for (u32 i = 0; i < nPatchSymbols; i++)
@@ -187,10 +185,10 @@ void Patch_PatchAll()
 		if (g_PatchSymbols[i]->Found)
 		{
 #ifdef DUMPOSFUNCTIONS
-			std::filesystem::path buf;
-			auto ps = g_PatchSymbols[i];
+			IO::Filename buf;
+			PatchSymbol * ps = g_PatchSymbols[i];
 			Dump_GetDumpDirectory(buf, "oshle");
-			buf / ps->Name;
+			IO::Path::Append(buf, ps->Name);
 
 			Dump_Disassemble(PHYS_TO_K0(ps->Location), PHYS_TO_K0(ps->Location) + ps->Signatures->NumOps * sizeof(OpCode),
 				buf);
@@ -206,7 +204,7 @@ void Patch_PatchAll()
 #endif
 }
 
-void Patch_ApplyPatch(u32 i [[maybe_unused]])
+void Patch_ApplyPatch(u32 i)
 {
 #ifdef DAEDALUS_ENABLE_DYNAREC
 	u32 pc = g_PatchSymbols[i]->Location;
@@ -231,7 +229,7 @@ u32 Patch_GetSymbolAddress(const char * name)
 		if (!g_PatchSymbols[p]->Found)
 			continue;
 
-		if (strcasecmp(g_PatchSymbols[p]->Name, name) == 0)
+		if (_strcmpi(g_PatchSymbols[p]->Name, name) == 0)
 			return PHYS_TO_K0(g_PatchSymbols[p]->Location);
 
 	}
@@ -373,23 +371,23 @@ void Patch_DumpOsQueueInfo()
 		}
 
 		if (dwFullQ == VAR_ADDRESS(osnullptrMsgQueue))
-			snprintf(fullqueue_buffer, sizeof(fullqueue_buffer), "       -");
+			sprintf(fullqueue_buffer, "       -");
 		else
-			snprintf(fullqueue_buffer,sizeof(fullqueue_buffer), "%08x", dwFullQ);
+			sprintf(fullqueue_buffer, "%08x", dwFullQ);
 
 		if (dwEmptyQ == VAR_ADDRESS(osnullptrMsgQueue))
-			snprintf(emptyqueue_buffer,sizeof(emptyqueue_buffer),  "       -");
+			sprintf(emptyqueue_buffer, "       -");
 		else
-			snprintf(emptyqueue_buffer, sizeof(emptyqueue_buffer), "%08x", dwEmptyQ);
+			sprintf(emptyqueue_buffer, "%08x", dwEmptyQ);
 
 		if (dwQueue == VAR_ADDRESS(osSiAccessQueue))
 		{
-			snprintf(type_buffer, sizeof(type_buffer),  "<- Si Access");
+			sprintf(type_buffer, "<- Si Access");
 
 		}
 		else if (dwQueue == VAR_ADDRESS(osPiAccessQueue))
 		{
-			snprintf(type_buffer, sizeof(type_buffer),  "<- Pi Access");
+			sprintf(type_buffer, "<- Pi Access");
 		}
 
 
@@ -400,7 +398,7 @@ void Patch_DumpOsQueueInfo()
 			{
 				if (dwQueue == Read32Bits(VAR_ADDRESS(osEventMesgArray) + (j * 8) + 0x0))
 				{
-					snprintf(type_buffer, sizeof(type_buffer), "<- %s", gEventStrings[j]);
+					sprintf(type_buffer, "<- %s", gEventStrings[j]);
 					break;
 				}
 			}
@@ -503,9 +501,11 @@ void Patch_RecurseAndFind()
 #ifdef DAEDALUS_DEBUG_CONSOLE
 	CDebugConsole::Get()->MsgOverwriteStart();
 #else
+#ifdef DAEDALUS_PSP
 	// Load our font here, Intrafont used in UI is destroyed when emulation starts
 	intraFont* ltn8  = intraFontLoad( "flash0:/font/ltn8.pgf", INTRAFONT_CACHE_ASCII);
 	intraFontSetStyle( ltn8, 1.0f, 0xFFFFFFFF, 0, 0.f, INTRAFONT_ALIGN_CENTER );
+#endif
 #endif
 
 	// Loops through all symbols, until name is nullptr
@@ -517,14 +517,16 @@ void Patch_RecurseAndFind()
 			i, nPatchSymbols, g_PatchSymbols[i]->Name);
 		fflush(stdout);
 #else
+#ifdef DAEDALUS_PSP
 		//Update patching progress on PSPscreen
 		CGraphicsContext::Get()->BeginFrame();
 		CGraphicsContext::Get()->ClearToBlack();
-		intraFontPrintf( ltn8, 480/2, (272>>1)-100, "Searching for os functions. This may take several seconds...");
+		//intraFontPrintf( ltn8, 480/2, (272>>1)-50, "Searching for os functions. This may take several seconds...");
 		intraFontPrintf( ltn8, 480/2, (272>>1), "OS HLE Patching: %d%%", i * 100 / (nPatchSymbols-1));
-		intraFontPrintf( ltn8, 480/2, (272>>1)+150, "Searching for %s", g_PatchSymbols[i]->Name );
+		intraFontPrintf( ltn8, 480/2, (272>>1)-50, "Searching for %s", g_PatchSymbols[i]->Name );
 		CGraphicsContext::Get()->EndFrame();
 		CGraphicsContext::Get()->UpdateFrame( true );
+#endif
 #endif //DAEDALUS_DEBUG_CONSOLE
 		// Skip symbol if already found, or if it is a variable
 		if (g_PatchSymbols[i]->Found)
@@ -612,6 +614,7 @@ void Patch_RecurseAndFind()
 		DBGConsole_Msg(0, "%d/%d symbols identified, in range 0x%08x -> 0x%08x",
 		nFound, nPatchSymbols, first, last);
 #else
+#ifdef DAEDALUS_PSP
 		//Update patching progress on PSPscreen
 		CGraphicsContext::Get()->BeginFrame();
 		CGraphicsContext::Get()->ClearToBlack();
@@ -619,6 +622,7 @@ void Patch_RecurseAndFind()
 		intraFontPrintf( ltn8, 480/2, (272>>1)+50, "Range 0x%08x -> 0x%08x", first, last );
 		CGraphicsContext::Get()->EndFrame();
 		CGraphicsContext::Get()->UpdateFrame( true );
+#endif
 #endif
 	}
 
@@ -653,6 +657,7 @@ void Patch_RecurseAndFind()
 #ifdef DAEDALUS_DEBUG_CONSOLE
 		DBGConsole_Msg(0, "%d/%d variables identified", nFound, nPatchVariables);
 #else
+#ifdef DAEDALUS_PSP
 		//Update patching progress on PSPscreen
 		CGraphicsContext::Get()->BeginFrame();
 		CGraphicsContext::Get()->ClearToBlack();
@@ -660,11 +665,14 @@ void Patch_RecurseAndFind()
 		CGraphicsContext::Get()->EndFrame();
 		CGraphicsContext::Get()->UpdateFrame( true );
 #endif
+#endif
 	}
 
 #ifndef DAEDALUS_DEBUG_CONSOLE
+#ifdef DAEDALUS_PSP
 	// Unload font after we done patching progress
 	intraFontUnload( ltn8 );
+#endif
 #endif
 
 }
@@ -751,7 +759,7 @@ bool Patch_VerifyLocation_CheckSignature(PatchSymbol * ps,
 
 	const u32 * code_base( g_pu32RamBase );
 
-	PatchCrossRef dummy_cr = {static_cast<u32>(~0), PX_JUMP, nullptr, nullptr};
+	PatchCrossRef dummy_cr = {static_cast<u32>(~0), PX_JUMP, nullptr };
 
 	if (pcr == nullptr)
 		pcr = &dummy_cr;
@@ -938,36 +946,37 @@ fail_find:
 
 static void Patch_FlushCache()
 {
-	std::filesystem::path path = setBasePath("SaveGames/Cache");
-	std::filesystem::create_directories(path);
-	std::filesystem::path name = g_ROM.mFileName.filename();
-	name.replace_extension("hle");
-	path /= name;
-	std::ofstream fp(path, std::ios::binary);
+	IO::Filename name;
 
-	if (fp.is_open())
+	Dump_GetSaveDirectory(name, g_ROM.mFileName, ".hle");
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+	DBGConsole_Msg(0, "Write OSHLE cache: %s", name);
+#endif
+	FILE *fp = fopen(name, "wb");
+
+	if (fp != nullptr)
 	{
 		u32 data = MAGIC_HEADER;
-		fp.write(reinterpret_cast<char*>(&data), sizeof(data));
+		fwrite(&data, 1, sizeof(data), fp);
 
 		for (u32 i = 0; i < nPatchSymbols; i++)
 		{
 			if (g_PatchSymbols[i]->Found )
 			{
 				data = g_PatchSymbols[i]->Location;
-				fp.write(reinterpret_cast<char*>(&data), sizeof(data));
+				fwrite(&data, 1, sizeof(data), fp);
 				for(data = 0; ;data++)
 				{
 					if (g_PatchSymbols[i]->Signatures[data].Function ==
 						g_PatchSymbols[i]->Function)
 						break;
 				}
-				fp.write(reinterpret_cast<char*>(&data), sizeof(data));
+				fwrite(&data, 1, sizeof(data), fp);
 			}
 			else
 			{
 				data = 0;
-				fp.write(reinterpret_cast<char*>(&data), sizeof(data));
+				fwrite(&data, 1, sizeof(data), fp);
 			}
 
 
@@ -983,42 +992,44 @@ static void Patch_FlushCache()
 			{
 				data = 0;
 			}
-			fp.write(reinterpret_cast<char*>(&data), sizeof(data));
+
+			fwrite(&data, 1, sizeof(data), fp);
 		}
+
+		fclose(fp);
 	}
 }
 
 
 static bool Patch_GetCache()
 {
-	std::filesystem::path name = setBasePath("SaveGames/Cache");
-	std::filesystem::path romName = g_ROM.mFileName.filename();
-	romName.replace_extension(".hle");
-	name /= romName;
-	std::cout << name << std::endl;
+	IO::Filename name;
 
-	std::fstream fp(name, std::ios::in |std::ios::binary);
+	Dump_GetSaveDirectory(name, g_ROM.mFileName, ".hle");
+	FILE *fp = fopen(name, "rb");
 
-	if(fp.is_open())
+	if (fp != nullptr)
 	{
-		DBGConsole_Msg(0, "Read from OSHLE cache: %s", name.string().c_str());
+		#ifdef DAEDALUS_DEBUG_CONSOLE
+		DBGConsole_Msg(0, "Read from OSHLE cache: %s", name);
+		#endif
 		u32 data;
 
-		fp.read(reinterpret_cast<char*>(&data), sizeof(data));
-
+		fread(&data, 1, sizeof(data), fp);
 		if (data != MAGIC_HEADER)
 		{
+			fclose(fp);
 			return false;
 		}
 
 		for (u32 i = 0; i < nPatchSymbols; i++)
 		{
-			fp.read(reinterpret_cast<char*>(&data), sizeof(data));
+			fread(&data, 1, sizeof(data), fp);
 			if (data != 0)
 			{
 				g_PatchSymbols[i]->Found = true;
 				g_PatchSymbols[i]->Location = data;
-				fp.read(reinterpret_cast<char*>(&data), sizeof(data));
+				fread(&data, 1, sizeof(data), fp);
 				g_PatchSymbols[i]->Function = g_PatchSymbols[i]->Signatures[data].Function;
 			}
 			else
@@ -1027,7 +1038,7 @@ static bool Patch_GetCache()
 
 		for (u32 i = 0; i < nPatchVariables; i++)
 		{
-			fp.read(reinterpret_cast<char*>(&data), sizeof(data));
+			fread(&data, 1, sizeof(data), fp);
 			if (data != 0)
 			{
 				g_PatchVariables[i]->Found = true;
@@ -1040,6 +1051,7 @@ static bool Patch_GetCache()
 			}
 		}
 
+		fclose(fp);
 		return true;
 	}
 
@@ -1099,7 +1111,7 @@ static u32 RET_JR_ERET()
 	return 0;
 }
 
-static u32 ConvertToPhysical(u32 addr)
+static u32 ConvertToPhysics(u32 addr)
 {
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT(IS_K0K1(addr) == (IS_KSEG0(addr) | IS_KSEG1(addr)), "IS_K0K1 is inconsistent");

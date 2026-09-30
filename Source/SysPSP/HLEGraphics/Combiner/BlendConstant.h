@@ -122,9 +122,11 @@ struct MulOp
 	static inline c32 Process( c32 a, c32 b )	{ return a.Modulate( b ); }
 	static inline const char * OpString()		{ return " * "; }
 };
-using CBlendConstantExpressionAdd = CBlendConstantExpression2< AddOp >;
-using CBlendConstantExpressionSub = CBlendConstantExpression2< SubOp >;
-using CBlendConstantExpressionMul = CBlendConstantExpression2< MulOp >;
+
+typedef CBlendConstantExpression2< AddOp >	CBlendConstantExpressionAdd;
+typedef CBlendConstantExpression2< SubOp >	CBlendConstantExpressionSub;
+typedef CBlendConstantExpression2< MulOp >	CBlendConstantExpressionMul;
+
 
 
 class CBlendConstantExpressionBlend : public CBlendConstantExpression

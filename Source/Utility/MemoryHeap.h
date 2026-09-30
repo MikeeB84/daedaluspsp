@@ -22,7 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef UTILITY_MEMORYHEAP_H_
 #define UTILITY_MEMORYHEAP_H_
 
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 class CMemoryHeap
 {

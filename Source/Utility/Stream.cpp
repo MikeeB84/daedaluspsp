@@ -17,8 +17,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
+#include "stdafx.h"
 #include "Stream.h"
 
 #include <stdio.h>
@@ -82,7 +81,7 @@ COutputStream & COutputStringStream::operator<<( char val )
 COutputStream & COutputStringStream::operator<<( s32 val )
 {
 	char	buffer[ 32+1 ];
-	snprintf( buffer, sizeof(buffer), "%d", val );
+	sprintf( buffer, "%d", val );
 	mpImpl->mString += buffer;
 	return *this;
 }
@@ -93,7 +92,7 @@ COutputStream & COutputStringStream::operator<<( s32 val )
 COutputStream & COutputStringStream::operator<<( u32 val )
 {
 	char	buffer[ 32+1 ];
-	snprintf( buffer,sizeof(buffer),  "%d", val );
+	sprintf( buffer, "%d", val );
 	mpImpl->mString += buffer;
 	return *this;
 }

@@ -17,19 +17,20 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
-
+#include "stdafx.h"
+#include "TraceRecorder.h"
+#include "Fragment.h"
+#include "BranchType.h"
 
 #include "Core/CPU.h"			// For dubious use of PC/NewPC
-#include "Debug/Registers.h"
+#include "Core/Registers.h"
+
 #include "Debug/DBGConsole.h"
-#include "DynaRec/BranchType.h"
-#include "DynaRec/Fragment.h"
-#include "DynaRec/TraceRecorder.h"
+
 #include "Utility/Profiler.h"
-#include "Debug/PrintOpCode.h"
-#include <fstream> 
+#include "Utility/PrintOpCode.h"
+
+//#define LOG_ABORTED_TRACES
 
 namespace
 {
@@ -229,7 +230,7 @@ CTraceRecorder::EUpdateTraceStatus	CTraceRecorder::UpdateTrace( u32 address,
 			u32		branch_target_address( GetBranchTarget( address, op_code, branch_type ) );
 			u32		fallthrough_address( address + 8 );
 
-			u32		target_address = 0;
+			u32		target_address {};
 			if( branch_taken )
 			{
 				// We're following the branch.
@@ -278,11 +279,6 @@ CTraceRecorder::EUpdateTraceStatus	CTraceRecorder::UpdateTrace( u32 address,
 
 //
 
-bool	CTraceRecorder::CanStopTrace() const
-{
-	return mTracing && !mTraceBuffer.empty() && mActiveBranchIdx == INVALID_IDX;
-}
-
 void	CTraceRecorder::StopTrace( u32 exit_address )
 {
 	#ifdef DAEDALUS_ENABLE_ASSERTS
@@ -296,7 +292,7 @@ void	CTraceRecorder::StopTrace( u32 exit_address )
 
 //
 
-CFragment *		CTraceRecorder::CreateFragment( std::shared_ptr<CCodeBufferManager> p_manager )
+CFragment *		CTraceRecorder::CreateFragment( CCodeBufferManager * p_manager )
 {
 	#ifdef DAEDALUS_ENABLE_DYNAREC_PROFILE
 	DAEDALUS_PROFILE( "CTraceRecorder::CreateFragment" );
@@ -336,12 +332,10 @@ void	CTraceRecorder::AbortTrace()
 	if( mTracing )
 	{
 #ifdef LOG_ABORTED_TRACES
-
-		std::filesystem::path path = setBasePath("aborted_traces.txt"):;
-		std::fstream fh(path);
-		if (fh.is_open())
+		FILE * fh( fopen( "aborted_traces.txt", "a" ) );
+		if(fh)
 		{
-				fh << "\n\nTrace: (" << mTraceBuffer.size() << " ops)\n";
+			fprintf( fh, "\n\nTrace: (%d ops)\n", mTraceBuffer.size() );
 
 			u32		last_address( mTraceBuffer.size() > 0 ? mTraceBuffer[ 0 ].Address-4 : 0 );
 			for(std::vector< STraceEntry >::const_iterator it = mTraceBuffer.begin(); it != mTraceBuffer.end(); ++it)
@@ -356,18 +350,22 @@ void	CTraceRecorder::AbortTrace()
 					DAEDALUS_ASSERT( branch_index < mBranchDetails.size(), "The branch index is out of range" );
 					#endif
 					const SBranchDetails &	details( mBranchDetails[ branch_index ] );
-					fh << "Branch" << branch_index << "->" << details.TargetAddress;
+					#ifdef DAEDALUS_DEBUG_CONSOLE
+					fprintf( fh, " BRANCH %d -> %08x\n", branch_index, details.TargetAddress );
+					#endif
 				}
 
 				char		buf[100];
 				SprintOpCodeInfo( buf, address, op_code );
 
 				bool		is_jump( address != last_address + 4 );
-				fh << std::hex << std::setfill('0') << std::setw(8) << address << ": "
-					<< (is_jump ? '*' : ' ') << buf << "\n";
+				#ifdef DAEDALUS_DEBUG_CONSOLE
+				fprintf( fh, "%08x: %c%s\n", address, is_jump ? '*' : ' ', buf );
+				#endif
 				last_address = address;
 			}
 
+			fclose(fh);
 		}
 #endif
 
@@ -398,7 +396,7 @@ void CTraceRecorder::Analyse( SRegisterUsageInfo & register_usage )
 
 	std::fill( reg_spans, reg_spans + NUM_N64_REGS, invalid_span );		// Set the interval to an invalid range
 
-	for( u32 i  = 0; i < mTraceBuffer.size(); ++i )
+	for( u32 i {}; i < mTraceBuffer.size(); ++i )
 	{
 		const STraceEntry & ti( mTraceBuffer[ i ] );
 		const StaticAnalysis::RegisterUsage&	usage = ti.Usage;
@@ -424,7 +422,7 @@ void CTraceRecorder::Analyse( SRegisterUsageInfo & register_usage )
 	register_usage.SpanList.reserve( NUM_N64_REGS );
 
 	// Iterate through registers, inserting all that are used into span list
-	for( u32 i = 0; i < NUM_N64_REGS; ++i )
+	for( u32 i {}; i < NUM_N64_REGS; ++i )
 	{
 		s32		start( reg_spans[ i ].first );
 		s32		end( reg_spans[ i ].second );

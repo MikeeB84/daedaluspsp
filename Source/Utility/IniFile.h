@@ -23,8 +23,7 @@
 #ifndef UTILITY_INIFILE_H_
 #define UTILITY_INIFILE_H_
 
-#include "Base/Types.h"
-#include "Utility/Paths.h"
+#include "Utility/DaedalusTypes.h"
 
 //*****************************************************************************
 //
@@ -63,7 +62,7 @@ class CIniFile
 	public:
 		virtual								~CIniFile();
 
-		static std::unique_ptr<CIniFile>					Create( const std::filesystem::path &filename );
+		static CIniFile *					Create( const char * filename );
 
 		virtual const CIniFileSection *		GetDefaultSection() const = 0;
 

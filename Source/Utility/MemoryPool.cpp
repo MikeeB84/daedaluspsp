@@ -1,4 +1,3 @@
+#include "stdafx.h"
 
-#include "Base/Types.h"
-
-#include "Utility/MemoryPool.h"
+#include "MemoryPool.h"

@@ -17,15 +17,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
-
+#include "stdafx.h"
+#include "BranchType.h"
 
 #include <stdlib.h>
 
 #include "Core/R4300OpCode.h"
-#include "DynaRec/BranchType.h"
-#include "Base/Macros.h"
+#include "Utility/Macros.h"
 
 //*************************************************************************************
 //
@@ -81,6 +79,9 @@ OpCode	GetInverseBranch( OpCode op_code )
 		case RegImmOp_BGEZAL:	op_code.regimm_op = RegImmOp_BLTZAL;break;
 		case RegImmOp_BLTZALL:	op_code.regimm_op = RegImmOp_BGEZALL;break;
 		case RegImmOp_BGEZALL:	op_code.regimm_op = RegImmOp_BLTZALL;break;
+		default:
+			NODEFAULT;
+			break;
 		}
 		break;
 
@@ -180,6 +181,9 @@ OpCode	UpdateBranchTarget( OpCode op_code, u32 op_address, u32 target_address )
 		case RegImmOp_BLTZALL:
 		case RegImmOp_BGEZALL:
 			op_code = UpdateBranchOffset( op_code, op_address, target_address );
+			break;
+		default:
+			NODEFAULT;
 			break;
 		}
 		break;

@@ -20,8 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DYNAREC_FRAGMENTCACHE_H_
 #define DYNAREC_FRAGMENTCACHE_H_
 
-#include "Base/Types.h"
-
+#include "Utility/DaedalusTypes.h"
 
 class	CFragment;
 class	CJumpLocation;
@@ -29,14 +28,11 @@ class	CCodeBufferManager;
 
 #include <map>
 #include <vector>
-#include <array>
-#include <memory>
-#include <filesystem>
 
 struct FHashT
 {
 	u32	addr;
-	uintptr_t ptr;
+	u32 ptr;
 };
 
 //*************************************************************************************
@@ -62,8 +58,7 @@ private:
 	static const u32 MEM_USAGE_SHIFT = 12;		// 4k
 	static const u32 NUM_MEM_USAGE_ENTRIES = MEMORY_8_MEG >> MEM_USAGE_SHIFT;
 
-	std::array<bool, NUM_MEM_USAGE_ENTRIES> mCacheCoverage;
-
+	bool			mCacheCoverage[ NUM_MEM_USAGE_ENTRIES ];
 };
 
 //*************************************************************************************
@@ -85,12 +80,12 @@ public:
 	void					Clear();
 
 #ifdef DAEDALUS_DEBUG_DYNAREC
-	void					DumpStats( const std::filesystem::path outputdir ) const;
+	void					DumpStats( const char * outputdir ) const;
 #endif
 
 	u32						GetMemoryUsage() const					{ return mMemoryUsage; }
 
-	std::shared_ptr<CCodeBufferManager>	GetCodeBufferManager() const			{ return mpCodeBufferManager; }
+	CCodeBufferManager *	GetCodeBufferManager() const			{ return mpCodeBufferManager; }
 
 	bool					ShouldInvalidateOnWrite( u32 address, u32 length ) const;
 
@@ -111,15 +106,16 @@ private:
 		u32			Address;
 		CFragment *	Fragment;
 	};
-	using FragmentVec = std::vector<SFragmentEntry>;
 
+	typedef std::vector< SFragmentEntry >	FragmentVec;
 	FragmentVec				mFragments;			// Sorted on Address
 
 	u32						mMemoryUsage;
 	u32						mInputLength;
 	u32						mOutputLength;
-	using JumpList = std::vector< CJumpLocation >;
-	using JumpMap = std::map< u32, JumpList >;
+
+	typedef std::vector< CJumpLocation >	JumpList;
+	typedef std::map< u32, JumpList >		JumpMap;
 	JumpMap					mJumpMap;
 
 	mutable u32				mCachedFragmentAddress;
@@ -132,10 +128,9 @@ private:
 	//#define MakeHashIdx( addr ) (((addr >> (2 * HASH_TABLE_BITS + 2)) ^ (addr >> (HASH_TABLE_BITS + 2)) ^ addr >> 2 ) & (HASH_TABLE_SIZE-1))
 	#define MakeHashIdx( addr ) (((addr >> (HASH_TABLE_BITS + 2)) ^ addr >> 2 ) & (HASH_TABLE_SIZE-1))
 
-	mutable std::array<FHashT, HASH_TABLE_SIZE> mpCacheHashTable;
-	// mutable FHashT			mpCacheHashTable[HASH_TABLE_SIZE];
+	mutable FHashT			mpCacheHashTable[HASH_TABLE_SIZE];
 
-	std::shared_ptr<CCodeBufferManager>	mpCodeBufferManager;
+	CCodeBufferManager *	mpCodeBufferManager;
 
 	CFragmentCacheCoverage	mCacheCoverage;
 };

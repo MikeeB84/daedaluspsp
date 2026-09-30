@@ -21,7 +21,7 @@ jobs:
     
     - name: Compile project
       run: |
-        ./build_daedalus.sh
+        ./build_daedalus.sh PSP_RELEASE
 
     - name: Get short SHA
       id: slug

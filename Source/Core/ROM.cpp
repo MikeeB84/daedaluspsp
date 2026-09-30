@@ -17,45 +17,42 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
+#include "stdafx.h"
 #include "ROM.h"
 
 #include <stdio.h>
-#include <cstring>
-#include <iostream>
-#include <fstream> 
 
-#include "Interface/Cheats.h"
-#include "Core/CPU.h"
-#include "Core/PIF.h"		// CController
-#include "Core/R4300.h"
-#include "RomFile/ROMBuffer.h"
-#include "Core/ROMImage.h"
-#include "RomFile/RomSettings.h"
-#include "Interface/ConfigOptions.h"
+#include "Cheats.h"
+#include "CPU.h"
+#include "PIF.h"		// CController
+#include "R4300.h"
+#include "ROMBuffer.h"
+#include "ROMImage.h"
+#include "RomSettings.h"
+
+#include "Config/ConfigOptions.h"
 #include "Debug/DBGConsole.h"
 #include "Debug/DebugLog.h"
 #include "Interface/RomDB.h"
-#include "Utility/MathUtil.h"
+#include "Math/MathUtil.h"
 #include "OSHLE/patch.h"			// Patch_ApplyPatches
-#include "Ultra/ultra_os.h"		// System type
-#include "Ultra/ultra_R4300.h"
-#include "HLEAudio/AudioPlugin.h"
-#include "HLEGraphics/GraphicsPlugin.h"
+#include "OSHLE/ultra_os.h"		// System type
+#include "OSHLE/ultra_R4300.h"
+#include "Plugins/AudioPlugin.h"
+#include "Plugins/GraphicsPlugin.h"
 #include "Utility/CRC.h"
 #include "Utility/FramerateLimiter.h"
-
-#include "Base/Macros.h"
-#include "Interface/Preferences.h"
-#include "RomFile/RomFile.h"
+#include "Utility/IO.h"
+#include "Utility/Macros.h"
+#include "Utility/Preferences.h"
+#include "Utility/ROMFile.h"
 #include "Utility/Stream.h"
-#include "Debug/Synchroniser.h"
+#include "Utility/Synchroniser.h"
 
-#if defined(DAEDALUS_ENABLE_DYNAREC_PROFILE)
+#if defined(DAEDALUS_ENABLE_DYNAREC_PROFILE) || defined(DAEDALUS_W32)
 // This isn't really the most appropriate place. Need to check with
 // the graphics plugin really
-u32 g_dwNumFrames = 0;
+u32 g_dwNumFrames {};
 #endif
 
 RomInfo g_ROM;
@@ -63,9 +60,10 @@ RomInfo g_ROM;
 static void DumpROMInfo( const ROMHeader & header )
 {
 	// The "Header" is actually something to do with the PI_DOM_*_OFS values...
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "Header:          0x%02x%02x%02x%02x", header.x1, header.x2, header.x3, header.x4);
 	DBGConsole_Msg(0, "Clockrate:       0x%08x", header.ClockRate);
-	DBGConsole_Msg(0, "BootAddr:        0x%08x", BSWAP32(header.BootAddress));
+	DBGConsole_Msg(0, "BootAddr:        0x%08x", SwapEndian(header.BootAddress));
 	DBGConsole_Msg(0, "Release:         0x%08x", header.Release);
 	DBGConsole_Msg(0, "CRC1:            0x%08x", header.CRC1);
 	DBGConsole_Msg(0, "CRC2:            0x%08x", header.CRC2);
@@ -76,10 +74,10 @@ static void DumpROMInfo( const ROMHeader & header )
 	DBGConsole_Msg(0, "Unknown3:        0x%04x", header.Unknown3);
 	DBGConsole_Msg(0, "Unknown4:        0x%02x", header.Unknown4);
 	DBGConsole_Msg(0, "Manufacturer:    0x%02x", header.Manufacturer);
-	DBGConsole_Msg(0, "CartID:          '%c%c'", header.CartID[0], header.CartID[1]);
+	DBGConsole_Msg(0, "CartID:          0x%04x", header.CartID);
 	DBGConsole_Msg(0, "CountryID:       0x%02x - '%c'", header.CountryID, (char)header.CountryID);
 	DBGConsole_Msg(0, "Unknown5:        0x%02x", header.Unknown5);
-
+	#endif
 }
 
 static void ROM_SimulatePIFBoot( ECicType cic_chip, u32 Country )
@@ -90,30 +88,23 @@ static void ROM_SimulatePIFBoot( ECicType cic_chip, u32 Country )
 		   RAMROM_GAME_OFFSET - RAMROM_BOOTSTRAP_OFFSET );
 
 	// Need to copy to SP_IMEM for CIC-6105 boot.
-	u8 * pIMemBase = (u8*)g_pMemoryBuffers[ MEM_SP_MEM ] + 0x1000;
+	u8 * pIMemBase {(u8*)g_pMemoryBuffers[ MEM_SP_MEM ] + 0x1000};
 
-	gCPUState.CPUControl[C0_RAND]._u32 = 0x1F;
+	//FIX ME: Some of these are redundant, see CPU_RomOpen
+	//
+	// gCPUState.CPUControl[C0_SR]		= 0x34000000;	//*SR_FR |*/ SR_ERL | SR_CU2|SR_CU1|SR_CU0;
+	R4300_SetSR(0x34000000);
+	gCPUState.CPUControl[C0_CONFIG]._u32	= 0x0006E463;	// 0x00066463;
+
 	gCPUState.CPUControl[C0_COUNT]._u32 = 0x5000;
-	Memory_MI_SetRegister(MI_VERSION_REG, 0x02020102);
-	Memory_SP_SetRegister(SP_STATUS_REG, SP_STATUS_HALT);
 	gCPUState.CPUControl[C0_CAUSE]._u32 = 0x0000005C;
+	//ENTRYHI_REGISTER	  = 0xFFFFE0FF;
 	gCPUState.CPUControl[C0_CONTEXT]._u32 = 0x007FFFF0;
 	gCPUState.CPUControl[C0_EPC]._u32 = 0xFFFFFFFF;
-	gCPUState.CPUControl[C0_BADVADDR]._u32 	= 0xFFFFFFFF;
-	gCPUState.CPUControl[C0_ERROR_EPC]._u32	= 0xFFFFFFFF;
-	gCPUState.CPUControl[C0_CONFIG]._u32	= 0x0006E463;
-	gCPUState.CPUControl[C0_SR]._u32		= 0x34000000;	//*SR_FR |*/ SR_ERL | SR_CU2|SR_CU1|SR_CU0;
-	//R4300_SetSR(0x34000000);
-
-	// From R4300 manual
-	//gCPUState.CPUControl[C0_SR]._u32   = 0x70400004;	//*SR_FR |*/ SR_ERL | SR_CU2|SR_CU1|SR_CU0;
-	R4300_SetSR(0x70400004);
-	gCPUState.CPUControl[C0_PRID]._u32   = 0x00000b10;	// Was 0xb00 - test rom reports 0xb10!!
-	gCPUState.CPUControl[C0_WIRED]._u32  = 0x0;
-
-	gCPUState.FPUControl[0]._u32 = 0x00000511;
-
-	((u32 *)g_pMemoryBuffers[MEM_RI_REG])[3] = 1;					// RI_CONFIG_REG Skips most of init
+	gCPUState.CPUControl[C0_BADVADDR]._u32 = 0xFFFFFFFF;
+	gCPUState.CPUControl[C0_ERROR_EPC]._u32= 0xFFFFFFFF;
+	gCPUState.CPUControl[C0_CONFIG]._u32= 0x0006E463;
+	//
 
 	gGPR[0]._u64=0x0000000000000000LL;
 	gGPR[1]._u64=0x0000000000000000LL;
@@ -350,102 +341,102 @@ void ROM_Unload()
 //Most hacks are for the PSP, due the limitations of the hardware, and because we prefer speed over accuracy
 void SpecificGameHacks( const ROMHeader & id )
 {
-	g_ROM.HACKS_u32 = 0;	//Default to no game hacks
-	u16 cart_val = (id.CartID[0] << 8) | id.CartID[1];
-	printf("Cart Value[%04X]\n", cart_val);
-	switch( cart_val)
-	{
-	case 0x4a32: g_ROM.GameHacks = WONDER_PROJECTJ2;	break;
-	case 0x4745: g_ROM.GameHacks = GOLDEN_EYE;			break;
-	case 0x4257: g_ROM.GameHacks = SUPER_BOWLING;		break;
-	case 0x4D51: g_ROM.GameHacks = PMARIO;				break;
-	case 0x4354: g_ROM.GameHacks = CHAMELEON_TWIST_2;	break;
-	case 0x5441: g_ROM.GameHacks = TARZAN;				break;
-	case 0x4346: g_ROM.GameHacks = CLAY_FIGHTER_63;		break;
-	case 0x4A50: g_ROM.GameHacks = ISS64;				break;
-	case 0x4459: g_ROM.GameHacks = DKR;					break;
-	case 0x4547: g_ROM.GameHacks = EXTREME_G2;			break;
-	case 0x5953: g_ROM.GameHacks = YOSHI;				break;
-	case 0x424C: g_ROM.GameHacks = BUCK_BUMBLE;			break;
-	case 0x4144: g_ROM.GameHacks = WORMS_ARMAGEDDON;	break;
-	case 0x5733: g_ROM.GameHacks = WCW_NITRO;			break;
+	printf("ROM ID[%04X]\n", id.CartID);
 
-	case 0x4A46:	// Jet Force Gemini
-	case 0x4756:	// Glover
+	g_ROM.HACKS_u32 = 0;	//Default to no game hacks
+
+	switch( id.CartID )
+	{
+	case 0x324a: g_ROM.GameHacks = WONDER_PROJECTJ2;	break;
+	case 0x4547: g_ROM.GameHacks = GOLDEN_EYE;			break;
+	case 0x5742: g_ROM.GameHacks = SUPER_BOWLING;		break;
+	case 0x514D: g_ROM.GameHacks = PMARIO;				break;
+	case 0x5632: g_ROM.GameHacks = CHAMELEON_TWIST_2;	break;
+	case 0x4154: g_ROM.GameHacks = TARZAN;				break;
+	case 0x4643: g_ROM.GameHacks = CLAY_FIGHTER_63;		break;
+	case 0x504A: g_ROM.GameHacks = ISS64;				break;
+	case 0x5944: g_ROM.GameHacks = DKR;					break;
+	case 0x3247: g_ROM.GameHacks = EXTREME_G2;			break;
+	case 0x5359: g_ROM.GameHacks = YOSHI;				break;
+	case 0x4C42: g_ROM.GameHacks = BUCK_BUMBLE;			break;
+	case 0x4441: g_ROM.GameHacks = WORMS_ARMAGEDDON;	break;
+
+	case 0x464A:	// Jet Force Geminy
+	case 0x5647:	// Glover
 		g_ROM.SET_ROUND_MODE = true;
 		break;
-	case 0x424B:	//Banjo-Kazooie
+	case 0x4B42:	//Banjo-Kazooie
 		g_ROM.TLUT_HACK = true;
 	//	g_ROM.DISABLE_LBU_OPT = true;
 		break;
-	case 0x5057:	//PilotWings64
-	case 0x5044:	//Perfect Dark
+	//case 0x5750:	//PilotWings64
+	case 0x4450:	//Perfect Dark
 		g_ROM.DISABLE_LBU_OPT = true;
 		break;
-	case 0x4159:	//AIDYN_CRONICLES
+	case 0x5941:	//AIDYN_CRONICLES
 		g_ROM.ALPHA_HACK = true;
 		g_ROM.GameHacks = AIDYN_CRONICLES;
 		break;
-	case 0x4C42:	//Mario Party 1
+	case 0x424C:	//Mario Party 1
 		g_ROM.DISABLE_SIM_CVT_D_S = true;
 		break;
-	case 0x544a:	//Tom and Jerry
-	case 0x4a4d:	//Earthworm Jim
-	case 0x5051:	//PowerPuff Girls
+	case 0x4A54:	//Tom and Jerry
+	case 0x4d4a:	//Earthworm Jim
+	case 0x5150:	//PowerPuff Girls
 		g_ROM.DISABLE_SIM_CVT_D_S = true;
 		g_ROM.LOAD_T1_HACK = true;
 		break;
-	case 0x4451:	//Donald Duck
-	case 0x5932:	//Rayman2
+	case 0x5144:	//Donald Duck
+	case 0x3259:	//Rayman2
 		g_ROM.SET_ROUND_MODE = true;
 		g_ROM.LOAD_T1_HACK = true;
 		g_ROM.T1_HACK = true;
 		break;
-	case 0x5833:	//GEX3
-	case 0x5832:	//GEX64
+	case 0x3358:	//GEX3
+	case 0x3258:	//GEX64
 		g_ROM.GameHacks = GEX_GECKO;
 		break;
-	case 0x5a4c:	//ZELDA_OOT
+	case 0x4c5a:	//ZELDA_OOT
 		g_ROM.ZELDA_HACK = true;
 		g_ROM.GameHacks = ZELDA_OOT;
 		break;
-	case 0x444f:	//DK64
+	case 0x4F44:	//DK64
 		g_ROM.SET_ROUND_MODE = true;
 		g_ROM.GameHacks = DK64;
 		break;
-	case 0x5a53:	//ZELDA_MM
+	case 0x535a:	//ZELDA_MM
 		g_ROM.TLUT_HACK = true;
 		g_ROM.ZELDA_HACK = true;
 		g_ROM.GameHacks = ZELDA_MM;
 		break;
-	case 0x5356:	//SSV
+	case 0x5653:	//SSV
 		g_ROM.LOAD_T1_HACK = true;
 		g_ROM.TLUT_HACK = true;
 		break;
-	case 0x4755:	//Sin and punishment
+	case 0x5547:	//Sin and punishment
 		g_ROM.TLUT_HACK = true;
 		g_ROM.GameHacks = SIN_PUNISHMENT;
 		break;
-	case 0x4237:	//Banjo Tooie
+	case 0x3742:	//Banjo Tooie
 		g_ROM.GameHacks = BANJO_TOOIE;
 		g_ROM.TLUT_HACK = true;
 		break;
-	case 0x4455:	//Duck Dodgers
-	case 0x5336:	//Star soldier - vanishing earth
-	case 0x4C32:	//Top Gear Rally 2
-	case 0x4752:	//Top Gear Rally
-	case 0x5245:	//Resident Evil 2
-	case 0x4644:	//Flying Dragon
-	case 0x4E53:	//Beetle Racing
+	case 0x5544:	//Duck Dodgers
+	case 0x3653:	//Star soldier - vanishing earth
+	case 0x324C:	//Top Gear Rally 2
+	case 0x5247:	//Top Gear Rally
+	case 0x4552:	//Resident Evil 2
+	case 0x4446:	//Flying Dragon
+	case 0x534E:	//Beetle Racing
 		g_ROM.TLUT_HACK = true;
 		break;
-	case 0x4146:	//Animal crossing
+	case 0x4641:	//Animal crossing
 		g_ROM.TLUT_HACK = true;
 		g_ROM.GameHacks = ANIMAL_CROSSING;
 		break;
-	case 0x4248:	//Body Harvest
-	case 0x4E43:	//Nightmare Creatures
-	case 0x4355:	//Cruisn' USA
+	case 0x4842:	//Body Harvest
+	case 0x434E:	//Nightmare Creatures
+	case 0x5543:	//Cruisn' USA
 		g_ROM.GameHacks = BODY_HARVEST;
 		break;
 	default:
@@ -477,7 +468,7 @@ bool ROM_LoadFile()
 	{
 		RomSettings			settings;
 		SRomPreferences		preferences;
-		
+
 		if (!CRomSettingsDB::Get()->GetSettings( rom_id, &settings ))
 		{
 			settings.Reset();
@@ -502,8 +493,9 @@ void ROM_UnloadFile()
 
 bool ROM_LoadFile(const RomID & rom_id, const RomSettings & settings, const SRomPreferences & preferences )
 {
-	DBGConsole_Msg(0, "Reading rom image: [C%s]", g_ROM.mFileName.string().c_str());
-
+	#ifdef DAEDALUS_DEBUG_CONSOLE
+	DBGConsole_Msg(0, "Reading rom image: [C%s]", g_ROM.mFileName);
+	#endif
 	// Get information about the rom header
 	RomBuffer::GetRomBytesRaw( &g_ROM.rh, 0, sizeof(ROMHeader) );
 
@@ -534,6 +526,7 @@ bool ROM_LoadFile(const RomID & rom_id, const RomSettings & settings, const SRom
 		CheatCodes_Read( g_ROM.settings.GameName.c_str(), "Daedalus.cht", g_ROM.rh.CountryID );
 	}
 
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "[G%s]", g_ROM.settings.GameName.c_str());
 	DBGConsole_Msg(0, "This game has been certified as [G%s] (%s)", g_ROM.settings.Comment.c_str(), g_ROM.settings.Info.c_str());
 	DBGConsole_Msg(0, "SaveType: [G%s]", ROM_GetSaveTypeName( g_ROM.settings.SaveType ) );
@@ -542,14 +535,15 @@ bool ROM_LoadFile(const RomID & rom_id, const RomSettings & settings, const SRom
 	DBGConsole_Msg(0, "SpeedSync: [G%d]", gSpeedSyncEnabled);
 	DBGConsole_Msg(0, "DynaRec: [G%s]", gDynarecEnabled ? "on" : "off");
 	DBGConsole_Msg(0, "Cheats: [G%s]", gCheatsEnabled ? "on" : "off");
+	#endif
 	//Patch_ApplyPatches();
 
 	return true;
 }
 
-bool ROM_GetRomName( const std::filesystem::path &filename, std::string & game_name )
+bool ROM_GetRomName( const char * filename, std::string & game_name )
 {
-	auto p_rom_file = ROMFile::Create( filename );
+	ROMFile * p_rom_file = ROMFile::Create( filename );
 	if (p_rom_file == nullptr)
 	{
 		return false;
@@ -559,7 +553,7 @@ bool ROM_GetRomName( const std::filesystem::path &filename, std::string & game_n
 
 	if (!p_rom_file->Open( messages ))
 	{
-		// delete p_rom_file;
+		delete p_rom_file;
 		return false;
 	}
 
@@ -572,7 +566,7 @@ bool ROM_GetRomName( const std::filesystem::path &filename, std::string & game_n
 	{
 		// Lots of files don't have any info - don't worry about it
 		delete [] p_bytes;
-		// delete p_rom_file;
+		delete p_rom_file;
 		return false;
 	}
 
@@ -585,39 +579,14 @@ bool ROM_GetRomName( const std::filesystem::path &filename, std::string & game_n
 	ROM_GetRomNameFromHeader( game_name, *prh );
 
 	delete [] p_bytes;
+	delete p_rom_file;
 	return true;
 }
 
-bool ROM_GetRomDetailsByFilename(const std::filesystem::path &filename, RomID *id, u32 *rom_size, ECicType *boot_type)
+bool ROM_GetRomDetailsByFilename( const char * filename, RomID * id, u32 * rom_size, ECicType * boot_type )
 {
-	if (!CRomDB::Get()->QueryByFilename(filename, id, rom_size, boot_type))
-		return false;
-
-	// AHH SaveType detection
-	ROMHeader header{};
-	std::ifstream rom(filename, std::ios::binary);
-	if (rom && rom.read(reinterpret_cast<char*>(&header), sizeof(header)))
-	{
-		if (strncmp(reinterpret_cast<const char*>(header.CartID), "ED", 2) == 0)
-		{
-			u8 flags = header.Unknown5;
-			u8 raw = (flags >> 4) & 0x0F;
-
-			RomSettings settings;
-			settings.SaveType = static_cast<ESaveType>(raw);
-			settings.Comment = "Detected via AHH";
-
-			if (!ROM_GetRomName(filename, settings.GameName))
-				settings.GameName = filename.filename().string();
-			settings.GameName = settings.GameName.substr(0, 63);
-
-			CRomSettingsDB::Get()->SetSettings(*id, settings);
-		}
-	}
-
-	return true;
+	return CRomDB::Get()->QueryByFilename( filename, id, rom_size, boot_type );
 }
-
 
 bool ROM_GetRomDetailsByID( const RomID & id, u32 * rom_size, ECicType * boot_type )
 {
@@ -632,8 +601,7 @@ struct CountryIDInfo
 	u32				TvType;
 };
 
-static constexpr std::array<CountryIDInfo, 13> g_CountryCodeInfo {
-// static const CountryIDInfo g_CountryCodeInfo[] =
+static const CountryIDInfo g_CountryCodeInfo[] =
 {
 	{  0,  "0",			OS_TV_NTSC },
 	{ '7', "Beta",		OS_TV_NTSC },
@@ -648,12 +616,12 @@ static constexpr std::array<CountryIDInfo, 13> g_CountryCodeInfo {
 	{ 'U', "Australia", OS_TV_PAL },
 	{ 'X', "PAL",		OS_TV_PAL },
 	{ 'Y', "PAL",		OS_TV_PAL }
-}};
+};
 
 // Get a string representing the country name from an ID value
 const char * ROM_GetCountryNameFromID( u8 country_id )
 {
-	for (u32 i = 0; i < g_CountryCodeInfo.size(); i++)
+	for (u32 i {}; i < ARRAYSIZE( g_CountryCodeInfo ); i++)
 	{
 		if (g_CountryCodeInfo[i].CountryID == country_id)
 		{
@@ -666,7 +634,7 @@ const char * ROM_GetCountryNameFromID( u8 country_id )
 
 u32 ROM_GetTvTypeFromID( u8 country_id )
 {
-	for (u32 i = 0; i < g_CountryCodeInfo.size(); i++)
+	for (u32 i {}; i < ARRAYSIZE( g_CountryCodeInfo ); i++)
 	{
 		if (g_CountryCodeInfo[i].CountryID == country_id)
 		{

@@ -1,8 +1,8 @@
-
-#include "Base/Types.h"
+#include "stdafx.h"
+#include "RendererPSP.h"
 
 #include <pspgu.h>
-#include <glm/gtc/type_ptr.hpp>  
+
 #include "Combiner/BlendConstant.h"
 #include "Combiner/CombinerTree.h"
 #include "Combiner/RenderSettings.h"
@@ -14,12 +14,10 @@
 #include "HLEGraphics/DLDebug.h"
 #include "HLEGraphics/RDPStateManager.h"
 #include "HLEGraphics/TextureCache.h"
-#include "Utility/MathUtil.h"
-#include "SysPSP/HLEGraphics/RendererPSP.h"
-#include "Ultra/ultra_gbi.h"
-
+#include "Math/MathUtil.h"
+#include "OSHLE/ultra_gbi.h"
+#include "Utility/IO.h"
 #include "Utility/Profiler.h"
-#include "SysPSP/Utility/PerfStats.h"
 
 
 //Draw normal filled triangles
@@ -46,9 +44,10 @@ static const u32 kPlaceholderTextureWidth  = 16;
 static const u32 kPlaceholderTextureHeight = 16;
 static const u32 kPlaceholderSize = kPlaceholderTextureWidth * kPlaceholderTextureHeight;
 
-u32 alignas(DATA_ALIGN) gWhiteTexture[kPlaceholderSize];
-u32 alignas(DATA_ALIGN) gPlaceholderTexture[kPlaceholderSize];
-u32 alignas(DATA_ALIGN) gSelectedTexture[kPlaceholderSize];
+ALIGNED_GLOBAL(u32,       gWhiteTexture[kPlaceholderSize], DATA_ALIGN);
+ALIGNED_GLOBAL(u32, gPlaceholderTexture[kPlaceholderSize], DATA_ALIGN);
+ALIGNED_GLOBAL(u32,    gSelectedTexture[kPlaceholderSize], DATA_ALIGN);
+
 
 #define BLEND_MODE_MAKER \
 { \
@@ -261,10 +260,8 @@ void RendererPSP::RestoreRenderStates()
 	sceGuTexWrap(GU_REPEAT,GU_REPEAT);
 
 	//sceGuSetMatrix( GU_PROJECTION, reinterpret_cast< const ScePspFMatrix4 * >( &gMatrixIdentity ) );
-	glm::mat4 identity = glm::mat4(1.0f);  // Create an identity matrix
-
-	sceGuSetMatrix(GU_VIEW, reinterpret_cast<const ScePspFMatrix4*>(glm::value_ptr(identity)));
-	sceGuSetMatrix(GU_MODEL, reinterpret_cast<const ScePspFMatrix4*>(glm::value_ptr(identity)));
+	sceGuSetMatrix( GU_VIEW, reinterpret_cast< const ScePspFMatrix4 * >( &gMatrixIdentity ) );
+	sceGuSetMatrix( GU_MODEL, reinterpret_cast< const ScePspFMatrix4 * >( &gMatrixIdentity ) );
 }
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
@@ -288,17 +285,9 @@ RendererPSP::SBlendStateEntry RendererPSP::LookupBlendState( u64 mux, bool two_c
 	// Top 8 bits are never set - use the very top one to differentiate between 1/2 cycles
 	key._u32_1 |= (two_cycles << 31);
 
-	if( mLastBlendValid && mLastBlendKey == key._u64 )
-	{
-		return mLastBlendEntry;
-	}
-
 	BlendStatesMap::const_iterator	it( mBlendStatesMap.find( key._u64 ) );
 	if( it != mBlendStatesMap.end() )
 	{
-		mLastBlendKey = key._u64;
-		mLastBlendEntry = it->second;
-		mLastBlendValid = true;
 		return it->second;
 	}
 
@@ -326,10 +315,6 @@ RendererPSP::SBlendStateEntry RendererPSP::LookupBlendState( u64 mux, bool two_c
 	//Add blend mode to the Blend States Map
 	mBlendStatesMap[ key._u64 ] = entry;
 
-	mLastBlendKey = key._u64;
-	mLastBlendEntry = entry;
-	mLastBlendValid = true;
-
 	return entry;
 }
 
@@ -339,12 +324,12 @@ void RendererPSP::RenderTriangles( DaedalusVtx * p_vertices, u32 num_vertices, b
 	{
 		UpdateTileSnapshots( mTextureTile );
 
-		const std::shared_ptr<CNativeTexture> & texture = mBoundTexture[0];
+		const CNativeTexture * texture {mBoundTexture[0]};
 
 		if( texture && (mTnL.Flags._u32 & (TNL_LIGHT|TNL_TEXGEN)) != (TNL_LIGHT|TNL_TEXGEN) )
 		{
-			float scale_x = texture->GetScaleX();
-			float scale_y = texture->GetScaleY();
+			float scale_x {texture->GetScaleX()};
+			float scale_y {texture->GetScaleY()};
 
 			// Hack to fix the sun in Zelda OOT/MM
 			if( g_ROM.ZELDA_HACK && (gRDPOtherMode.L == 0x0c184241) )	 //&& ti.GetFormat() == G_IM_FMT_I && (ti.GetWidth() == 64)
@@ -379,16 +364,17 @@ inline void RendererPSP::RenderFog( DaedalusVtx * p_vertices, u32 num_vertices, 
 		sceGuDisable(GU_TEXTURE_2D);	//Blend triangle without a texture
 		sceGuDisable(GU_ALPHA_TEST);
 		sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
-   		// Enable PSP hardware fog
-    	sceGuEnable(GU_FOG);
 
-    	// Configure fog range and color
-		u32 fogColor = (mFogColour.GetColour()); // Fog color
-   		sceGuFog(mfog_near, mfog_far, fogColor);
+		u32 FogColor {mFogColour.GetColour()};
+
+		//Copy fog color to vertices
+		for(u32 i {} ; i < num_vertices ; i++)
+		{
+			u32 alpha {p_vertices[i].Colour.GetColour() & 0xFF000000};
+			p_vertices[i].Colour = (c32)(alpha | FogColor);
+		}
 
 		sceGuDrawArray( triangle_mode, render_flags, num_vertices, nullptr, p_vertices );
-
-		sceGuDisable(GU_FOG);
 
 		sceGuDepthFunc(GU_GEQUAL);	//Restore default depth function
 	}
@@ -396,8 +382,7 @@ inline void RendererPSP::RenderFog( DaedalusVtx * p_vertices, u32 num_vertices, 
 
 void RendererPSP::RenderUsingCurrentBlendMode( DaedalusVtx * p_vertices, u32 num_vertices, u32 triangle_mode, u32 render_mode, bool disable_zbuffer )
 {
-	DAEDALUS_PERF_SCOPE( PERF_GFX_DRAW );
-	static bool	ZFightingEnabled = false;
+	static bool	ZFightingEnabled {false};
 
 	DAEDALUS_PROFILE( "RendererPSP::RenderUsingCurrentBlendMode" );
 
@@ -451,7 +436,7 @@ void RendererPSP::RenderUsingCurrentBlendMode( DaedalusVtx * p_vertices, u32 num
 		sceGuTexFilter(GU_NEAREST,GU_NEAREST);
 	}
 
-	u32 cycle_mode = gRDPOtherMode.cycle_type;
+	u32 cycle_mode {gRDPOtherMode.cycle_type};
 
 	// Initiate Blender
 	//
@@ -468,7 +453,7 @@ void RendererPSP::RenderUsingCurrentBlendMode( DaedalusVtx * p_vertices, u32 num
 	//
 	if( (gRDPOtherMode.alpha_compare == G_AC_THRESHOLD) && !gRDPOtherMode.alpha_cvg_sel )
 	{
-		u8 alpha_threshold = mBlendColour.GetA();
+		u8 alpha_threshold {mBlendColour.GetA()};
 		sceGuAlphaFunc( (alpha_threshold | g_ROM.ALPHA_HACK) ? GU_GEQUAL : GU_GREATER, alpha_threshold, 0xff);
 		sceGuEnable(GU_ALPHA_TEST);
 	}
@@ -494,7 +479,7 @@ void RendererPSP::RenderUsingCurrentBlendMode( DaedalusVtx * p_vertices, u32 num
 		case CYCLE_2CYCLE:		blend_entry = LookupBlendState( mMux, true ); break;
 	}
 
-	u32 render_flags = GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | render_mode;
+	u32 render_flags {GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_32BITF | render_mode};
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	// Used for Blend Explorer, or Nasty texture
@@ -523,11 +508,11 @@ void RendererPSP::RenderUsingCurrentBlendMode( DaedalusVtx * p_vertices, u32 num
 
 		blend_entry.OverrideFunction( details );
 
-		bool installed_texture = false;
+		bool installed_texture {false};
 
 		if( details.InstallTexture )
 		{
-			u32 texture_idx = g_ROM.T1_HACK ? 1 : 0;
+			u32 texture_idx {g_ROM.T1_HACK ? 1 : 0};
 
 			if( mBoundTexture[ texture_idx ] )
 			{
@@ -599,7 +584,7 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 		memcpy( mVtx_Save, p_vertices, num_vertices * sizeof( DaedalusVtx ) );
 	}
 
-	for( u32 i = 0; i < states->GetNumStates(); ++i )
+	for( u32 i {}; i < states->GetNumStates(); ++i )
 	{
 		const CRenderSettings *		settings( states->GetColourSettings( i ) );
 
@@ -628,13 +613,13 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 			out.VertexExpressionA->ApplyExpressionAlpha( state );
 		}
 
-		bool installed_texture = false;
+		bool installed_texture {false};
 
-		u32 texture_idx = 0;
+		u32 texture_idx {};
 
 		if(install_texture0 || install_texture1)
 		{
-			u32	tfx = GU_TFX_MODULATE;
+			u32	tfx {GU_TFX_MODULATE};
 			switch( out.BlendMode )
 			{
 			case PBM_MODULATE:		tfx = GU_TFX_MODULATE; break;
@@ -649,7 +634,7 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 				// NB if install_texture0 and install_texture1 are both set, 1 wins out
 				texture_idx = install_texture1;
 
-				const std::shared_ptr<CNativeTexture> & texture1 = mBoundTexture[ 1 ];
+				const CNativeTexture * texture1 = mBoundTexture[ 1 ];
 
 				if( install_texture1 && texture1 && mTnL.Flags.Texture && (mTnL.Flags._u32 & (TNL_LIGHT|TNL_TEXGEN)) != (TNL_LIGHT|TNL_TEXGEN) )
 				{
@@ -667,21 +652,17 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 				texture_idx = install_texture0 ? 0 : 1;
 			}
 
-			// Raw pointer: the texture cache / bound slot keeps it alive, and
-			// avoids atomic reference count updates on every draw call
-			CNativeTexture * texture;
-			std::shared_ptr<CNativeTexture> white_texture;
+			CRefPtr<CNativeTexture> texture;
 
 			if(out.MakeTextureWhite)
 			{
 				TextureInfo white_ti = mBoundTextureInfo[ texture_idx ];
 				white_ti.SetWhite(true);
-				white_texture = CTextureCache::Get()->GetOrCreateTexture( white_ti );
-				texture = white_texture.get();
+				texture = CTextureCache::Get()->GetOrCreateTexture( white_ti );
 			}
 			else
 			{
-				texture = mBoundTexture[ texture_idx ].get();
+				texture = mBoundTexture[ texture_idx ];
 			}
 
 			if(texture != nullptr)
@@ -705,7 +686,7 @@ void RendererPSP::RenderUsingRenderSettings( const CBlendStates * states, Daedal
 	}
 }
 
-void RendererPSP::TexRect( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 & xy1, TexCoord st0, TexCoord st1 )
+void RendererPSP::TexRect( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexCoord st0, TexCoord st1 )
 {
 	mTnL.Flags.Fog = 0;	//For now we force fog off for textrect, normally it should be fogged when depth_source is set //Corn
 
@@ -716,11 +697,11 @@ void RendererPSP::TexRect( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 
 
 	// Convert fixed point uvs back to floating point format.
 	// NB: would be nice to pass these as s16 ints, and use GU_TEXTURE_16BIT
-	glm::vec2 uv0( (float)st0.s / 32.f, (float)st0.t / 32.f );
-	glm::vec2 uv1( (float)st1.s / 32.f, (float)st1.t / 32.f );
+	v2 uv0( (float)st0.s / 32.f, (float)st0.t / 32.f );
+	v2 uv1( (float)st1.s / 32.f, (float)st1.t / 32.f );
 
-	glm::vec2 screen0;
-	glm::vec2 screen1;
+	v2 screen0;
+	v2 screen1;
 	if( gGlobalPreferences.ViewportType == VT_FULLSCREEN_HD )
 	{
 		screen0.x = roundf( roundf( HD_SCALE * xy0.x ) * mN64ToScreenScale.x + 59 );	//59 in translate is an ugly hack that only work on 480x272 display//Corn
@@ -739,7 +720,7 @@ void RendererPSP::TexRect( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 
 	DL_PF( "    Screen:  %.1f,%.1f -> %.1f,%.1f", screen0.x, screen0.y, screen1.x, screen1.y );
 	DL_PF( "    Texture: %.1f,%.1f -> %.1f,%.1f", uv0.x, uv0.y, uv1.x, uv1.y );
 #endif
-	const f32 depth = gRDPOtherMode.depth_source ? mPrimDepth : 0.0f;
+	const f32 depth {gRDPOtherMode.depth_source ? mPrimDepth : 0.0f};
 
 #if 1	//1->SPRITE, 0->STRIP
 	DaedalusVtx * p_vertices = static_cast<DaedalusVtx *>(sceGuGetMemory(2 * sizeof(DaedalusVtx)));
@@ -800,7 +781,7 @@ void RendererPSP::TexRect( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 
 #endif
 }
 
-void RendererPSP::TexRectFlip( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 & xy1, TexCoord st0, TexCoord st1 )
+void RendererPSP::TexRectFlip( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexCoord st0, TexCoord st1 )
 {
 	mTnL.Flags.Fog = 0;	//For now we force fog off for textrect, normally it should be fogged when depth_source is set //Corn
 
@@ -811,11 +792,11 @@ void RendererPSP::TexRectFlip( u32 tile_idx, const glm::vec2 & xy0, const glm::v
 
 	// Convert fixed point uvs back to floating point format.
 	// NB: would be nice to pass these as s16 ints, and use GU_TEXTURE_16BIT
-	glm::vec2 uv0( (float)st0.s / 32.f, (float)st0.t / 32.f );
-	glm::vec2 uv1( (float)st1.s / 32.f, (float)st1.t / 32.f );
+	v2 uv0( (float)st0.s / 32.f, (float)st0.t / 32.f );
+	v2 uv1( (float)st1.s / 32.f, (float)st1.t / 32.f );
 
-	glm::vec2 screen0;
-	glm::vec2 screen1;
+	v2 screen0;
+	v2 screen1;
 	// FIXME(strmnnrmn): why is VT_FULLSCREEN_HD code in TexRect() not also done here?
 	ConvertN64ToScreen( xy0, screen0 );
 	ConvertN64ToScreen( xy1, screen1 );
@@ -862,7 +843,7 @@ void RendererPSP::TexRectFlip( u32 tile_idx, const glm::vec2 & xy0, const glm::v
 #endif
 }
 
-void RendererPSP::FillRect( const glm::vec2 & xy0, const glm::vec2 & xy1, u32 color )
+void RendererPSP::FillRect( const v2 & xy0, const v2 & xy1, u32 color )
 {
 /*
 	if ( (gRDPOtherMode._u64 & 0xffff0000) == 0x5f500000 )	//Used by Wave Racer
@@ -875,8 +856,8 @@ void RendererPSP::FillRect( const glm::vec2 & xy0, const glm::vec2 & xy1, u32 co
 	// This if for C&C - It might break other stuff (I'm not sure if we should allow alpha or not..)
 	//color |= 0xff000000;
 
-	glm::vec2 screen0;
-	glm::vec2 screen1;
+	v2 screen0;
+	v2 screen1;
 	ConvertN64ToScreen( xy0, screen0 );
 	ConvertN64ToScreen( xy1, screen1 );
 
@@ -909,9 +890,9 @@ void RendererPSP::FillRect( const glm::vec2 & xy0, const glm::vec2 & xy1, u32 co
 }
 
 void RendererPSP::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
-								f32 u0, f32 v0, f32 u1, f32 v1, const std::shared_ptr<CNativeTexture> & texture)
+								f32 u0, f32 v0, f32 u1, f32 v1,
+								const CNativeTexture * texture)
 {
-	texture->InstallTexture();
 	DAEDALUS_PROFILE( "RendererPSP::Draw2DTexture" );
 	TextureVtx *p_verts = (TextureVtx*)sceGuGetMemory(4*sizeof(TextureVtx));
 
@@ -938,16 +919,13 @@ void RendererPSP::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
 	sceGuTexWrap(GU_CLAMP, GU_CLAMP);
 
 	// Handle large images (width > 512) with blitting, since the PSP HW can't handle
-	// Handling height > 512 doesn't work well? Ignore for now
-	if( u1 >= 512.f )
+	// Handling height > 512 doesn't work well? Ignore for now.
+	if( u1 >= 512 )
 	{
-		const std::shared_ptr<CNativeTexture> & texture = mBoundTexture[0];
+
 		Draw2DTextureBlit( x0, y0, x1, y1, u0, v0, u1, v1, texture );
 		return;
 	}
-
-	//TODO: Investigate why handeling (height > 512) doesn't work?
-	DAEDALUS_ASSERT(v1 < 512.f, "Large textures with with height %d not supported",v1);
 
 	p_verts[0].pos.x = N64ToScreenX(x0);
 	p_verts[0].pos.y = N64ToScreenY(y0);
@@ -978,9 +956,8 @@ void RendererPSP::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
 
 void RendererPSP::Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1,
 								 f32 x2, f32 y2, f32 x3, f32 y3,
-								 f32 s, f32 t, const std::shared_ptr<CNativeTexture> & texture)	// With Rotation
+								 f32 s, f32 t)	// With Rotation
 {
-	texture->InstallTexture();
 	DAEDALUS_PROFILE( "RendererPSP::Draw2DTextureR" );
 	TextureVtx *p_verts = (TextureVtx*)sceGuGetMemory(4*sizeof(TextureVtx));
 
@@ -1006,13 +983,6 @@ void RendererPSP::Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1,
 	sceGuEnable(GU_BLEND);
 	sceGuTexWrap(GU_CLAMP, GU_CLAMP);
 
-	// Why are we not blitting large textures here?
-#ifdef DAEDALUS_ENABLE_ASSERTS	
-	if (s > 512.f || t > 512.f)
-	{
-		DAEDALUS_ERROR("Large texture isn't handled correctly %d x %d",s,t);
-	}
-#endif
 	p_verts[0].pos.x = N64ToScreenX(x0);
 	p_verts[0].pos.y = N64ToScreenY(y0);
 	p_verts[0].pos.z = 0.0f;
@@ -1044,38 +1014,40 @@ void RendererPSP::Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1,
 // See http://www.assembla.com/code/openTRI for more information.
 void RendererPSP::Draw2DTextureBlit(f32 x, f32 y, f32 width, f32 height,
 									f32 u0, f32 v0, f32 u1, f32 v1,
-									const std::shared_ptr<CNativeTexture> & texture)
+									const CNativeTexture * texture)
 {
-	if (texture == nullptr)
+	if (!texture)
 	{
+		#ifdef DAEDALUS_DEBUG_CONSOLE
 		DAEDALUS_ERROR("No texture in Draw2DTextureBlit");
+		#endif
 		return;
 	}
 
-	f32 cur_v = v0;
-	f32 cur_y = y;
-	f32 v_end = v1;
-	f32 y_end = height;
-	f32 vslice = 512.f;
-	f32 ystep = (height/(v1-v0) * vslice);
-	f32 vstep = (v1-v0) > 0 ? vslice : -vslice;
+	f32 cur_v {v0};
+	f32 cur_y {y};
+	f32 v_end {v1};
+	f32 y_end {height};
+	f32 vslice {512.f};
+	f32 ystep {(height/(v1-v0) * vslice)};
+	f32 vstep {(v1-v0) > 0 ? vslice : -vslice};
 
-	f32 x_end = width;
-	f32 uslice = 64.f;
+	f32 x_end {width};
+	f32 uslice {64.f};
 	//f32 ustep = (u1-u0)/width * xslice;
-	f32 xstep = (width/(u1-u0) * uslice);
-	f32 ustep = (u1-u0) > 0 ? uslice : -uslice;
+	f32 xstep {(width/(u1-u0) * uslice)};
+	f32 ustep {(u1-u0) > 0 ? uslice : -uslice};
 
-	const u8* data = static_cast<const u8*>(texture->GetData());
+	const u8* data {static_cast<const u8*>(texture->GetData())};
 
 	for ( ; cur_y < y_end; cur_y+=ystep, cur_v+=vstep )
 	{
-		f32 cur_u = u0;
-		f32 cur_x = x;
-		f32 u_end = u1;
+		f32 cur_u {u0};
+		f32 cur_x {x};
+		f32 u_end {u1};
 
-		f32 poly_height = ((cur_y+ystep) > y_end) ? (y_end-cur_y) : ystep;
-		f32 source_height = vstep;
+		f32 poly_height {((cur_y+ystep) > y_end) ? (y_end-cur_y) : ystep};
+		f32 source_height {vstep};
 
 		// support negative vsteps
 		if ((vstep > 0) && (cur_v+vstep > v_end))
@@ -1087,7 +1059,7 @@ void RendererPSP::Draw2DTextureBlit(f32 x, f32 y, f32 width, f32 height,
 			source_height = (cur_v-v_end);
 		}
 
-		const u8* udata = data;
+		const u8* udata {data};
 		// blit maximizing the use of the texture-cache
 		for( ; cur_x < x_end; cur_x+=xstep, cur_u+=ustep )
 		{
@@ -1099,14 +1071,13 @@ void RendererPSP::Draw2DTextureBlit(f32 x, f32 y, f32 width, f32 height,
 				udata += off * GetBitsPerPixel( texture->GetFormat() );
 				cur_u -= off;
 				u_end -= off;
-				
-				 sceGuTexImage(0, std::min<u32>(512,texture->GetCorrectedWidth()), std::min<u32>(512,texture->GetCorrectedHeight()), texture->GetBlockWidth(), udata);
+				sceGuTexImage(0, Min<u32>(512,texture->GetCorrectedWidth()), Min<u32>(512,texture->GetCorrectedHeight()), texture->GetBlockWidth(), udata);
 			}
 			TextureVtx *p_verts = (TextureVtx*)sceGuGetMemory(2*sizeof(TextureVtx));
 
 			//f32 poly_width = ((cur_x+xstep) > x_end) ? (x_end-cur_x) : xstep;
-			f32 poly_width = xstep;
-			f32 source_width = ustep;
+			f32 poly_width {xstep};
+			f32 source_width {ustep};
 
 			// support negative usteps
 			if ((ustep > 0) && (cur_u+ustep > u_end))
@@ -1216,18 +1187,16 @@ void RendererPSP::DebugMux( const CBlendStates * states, DaedalusVtx * p_vertice
 	{
 		if (mUnhandledCombinerStates.find( mux ) == mUnhandledCombinerStates.end())
 		{
-			std::filesystem::path filepath = setBasePath("Mux");
-			// filepath /= g_ROM.settings.GameName.c_str();
-			
-			// Dump_GetDumpDirectory(filepath.c_str(), g_ROM.settings.GameName.c_str());
-			filepath /= "missing.mux";
+			IO::Filename filepath;
+			Dump_GetDumpDirectory(filepath, g_ROM.settings.GameName.c_str());
+			IO::Path::Append(filepath, "missing_mux.txt");
 
-			FILE * fh = fopen(filepath.c_str(), mUnhandledCombinerStates.empty() ? "w" : "a");
+			FILE * fh = fopen(filepath, mUnhandledCombinerStates.empty() ? "w" : "a");
 			if (fh != nullptr)
 			{
 				DLDebug_PrintMux( fh, mux );
 				fclose(fh);
-			}	
+			}
 
 			mUnhandledCombinerStates.insert( mux );
 		}

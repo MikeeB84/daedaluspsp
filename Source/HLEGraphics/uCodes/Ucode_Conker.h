@@ -20,26 +20,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef HLEGRAPHICS_UCODES_UCODE_CONKER_H_
 #define HLEGRAPHICS_UCODES_UCODE_CONKER_H_
 
-#define CONKER_SHADOW 0x005049d8
-
-// Skip shadow for now (not rendered correctly)
+// Alot cheaper than check mux
 // TODO: Should handle shadow eventually!
-inline bool IgnoreConkerShadow()
-{
-	if (g_CI.Format != G_IM_FMT_RGBA || gRDPOtherMode.L == CONKER_SHADOW)
-		return true;
-		
-	return false;
-}
-
+#define CONKER_SHADOW 0x005049d8//0x00ffe9ffffd21f0fLL
 //*****************************************************************************
 //
 //*****************************************************************************
 void DLParser_Vtx_Conker( MicroCodeCommand command )
 {
-	if (IgnoreConkerShadow())
+	if( g_CI.Format != G_IM_FMT_RGBA || (gRDPOtherMode.L == CONKER_SHADOW) )
 	{
+		#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 		DL_PF("    Skipping Conker TnL (Vtx -> Off-Screen/Shadow)");
+		#endif
 		return;
 	}
 
@@ -47,17 +40,17 @@ void DLParser_Vtx_Conker( MicroCodeCommand command )
 	u32 len    = ((command.inst.cmd0 >> 1 )& 0x7F) ;
 	u32 n      = ((command.inst.cmd0 >> 12)& 0xFF);
 	u32 v0		= len - n;
-
+#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	DL_PF("    Address[0x%08x] Len[%d] v0[%d] Num[%d]", address, len, v0, n);
-	if (IsVertexInfoValid(address, 16, v0, n))
-	{
-		gRenderer->SetNewVertexInfoConker( address, v0, n );
+	#endif
+
+	gRenderer->SetNewVertexInfoConker( address, v0, n );
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-	  	gNumVertices += n;
-	  	DLParser_DumpVtxInfo( address, v0, n );
+	  gNumVertices += n;
+	  DLParser_DumpVtxInfo( address, v0, n );
 #endif
-	}
+
 }
 
 //*****************************************************************************
@@ -70,12 +63,15 @@ void DLParser_Tri1_Conker( MicroCodeCommand command )
 	u32 pc = gDlistStack.address[gDlistStackPointer];
 	u32 * pCmdBase = (u32 *)(g_pu8RamBase + pc);
 
-	// If this is true then just skip the whole list of tris //Corn
-	if (IgnoreConkerShadow())
+	// If Off screen rendering is true then just skip the whole list of tris //Corn
+	// Skip shadow as well
+	if( g_CI.Format != G_IM_FMT_RGBA || (gRDPOtherMode.L == CONKER_SHADOW) )
 	{
 		do
 		{
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 			DL_PF("    Tri1 (Culled -> Off-Screen/Shadow)");
+			#endif
 			command.inst.cmd0 = *pCmdBase++;
 			command.inst.cmd1 = *pCmdBase++;
 			pc += 8;
@@ -118,12 +114,15 @@ void DLParser_Tri2_Conker( MicroCodeCommand command )
 	u32 pc = gDlistStack.address[gDlistStackPointer];
 	u32 * pCmdBase = (u32 *)(g_pu8RamBase + pc);
 
-	// If this is true then just skip the whole list of tris //Corn
-	if (IgnoreConkerShadow())
+	// If Off screen rendering is true then just skip the whole list of tris //Corn
+	// Skip shadow as well
+	if( g_CI.Format != G_IM_FMT_RGBA || (gRDPOtherMode.L == CONKER_SHADOW) )
 	{
 		do
 		{
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 			DL_PF("    Tri2 (Culled -> Off-Screen/Shadow)");
+			#endif
 			command.inst.cmd0 = *pCmdBase++;
 			command.inst.cmd1 = *pCmdBase++;
 			pc += 8;
@@ -171,12 +170,15 @@ void DLParser_Tri4_Conker( MicroCodeCommand command )
 {
 	u32 pc = gDlistStack.address[gDlistStackPointer];		// This points to the next instruction
 
-	// If this is true then just skip the whole list of tris //Corn
-	if (IgnoreConkerShadow())
+	// If Off screen rendering is true then just skip the whole list of tris //Corn
+	// Skip shadow as well
+	if( g_CI.Format != G_IM_FMT_RGBA || (gRDPOtherMode.L == CONKER_SHADOW) )
 	{
 		do
 		{
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 			DL_PF("    Tri4 (Culled -> Off-Screen)");
+			#endif
 			command.inst.cmd0 = *(u32 *)(g_pu8RamBase + pc+0);
 			command.inst.cmd1 = *(u32 *)(g_pu8RamBase + pc+4);
 			pc += 8;
@@ -253,22 +255,30 @@ void DLParser_MoveMem_Conker( MicroCodeCommand command )
 			gAuxAddr = address;		//Conker VtxZ address
 		}
 		break;
-		
 	case G_GBI2_MV_LIGHT:
 		{
 			u32 offset2 = (command.inst.cmd0 >> 5) & 0x3FFF;
 			u32 light_idx = (offset2 / 48);
 			if (light_idx < 2)
 			{
+				#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 				DL_PF("    G_MV_LOOKAT" );
+				#endif
 				return;
 			}
 
-			RDP_MoveMemLight< POINT_LIGHT_CBFD, 12 >(address, light_idx - 2);
+			light_idx -= 2;
+			N64Light *light = (N64Light*)(g_pu8RamBase + address);
+			RDP_MoveMemLight(light_idx, light);
+
+			gRenderer->SetLightPosition( light_idx, light->x, light->y, light->z , light->w);
+			gRenderer->SetLightCBFD( light_idx, light->nonzero);
 		}
 		break;
 	default:
-		DL_PF("    Conker MoveMem Type: Unknown");
+		#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+		DL_PF("    GBI2 MoveMem Type: Unknown");
+		#endif
 		break;
 	}
 }
@@ -278,14 +288,16 @@ void DLParser_MoveMem_Conker( MicroCodeCommand command )
 //*****************************************************************************
 void DLParser_MoveWord_Conker( MicroCodeCommand command )
 {
+#if 1
 	u8 index = (u8)(( command.inst.cmd0 >> 16) & 0xFF);
 	switch (index)
 	{
 	case G_MW_NUMLIGHT:
 		{
 			u32 num_lights = command.inst.cmd1 / 48;
-
+				#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 			DL_PF("    G_MW_NUMLIGHT: %d", num_lights);
+			#endif
 			gRenderer->SetNumLights(num_lights);
 		}
 		break;
@@ -294,17 +306,18 @@ void DLParser_MoveWord_Conker( MicroCodeCommand command )
 		{
 			u16 offset = (u16)( command.inst.cmd0 & 0xFFFF);
 			u32 segment = (offset >> 2) & 0xF;
-			u32 address	= command.inst.cmd1 & 0x00FFFFFF;
-			
-			DL_PF( "    G_MW_SEGMENT Segment[%d] = 0x%08x", segment, address );
-			gSegments[segment] = address;
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+			DL_PF( "    G_MW_SEGMENT Segment[%d] = 0x%08x", segment, command.inst.cmd1 );
+			#endif
+			gSegments[segment] = command.inst.cmd1;
 		}
 		break;
 
 	case 0x10:  // moveword coord mod
 	{
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 		DL_PF("     G_MoveWord_Conker: coord mod");
-		
+		#endif
 		if ( (command.inst.cmd0 & 8) == 0 )
 		{
 			u32 idx = (command.inst.cmd0 >> 1) & 3;
@@ -331,9 +344,28 @@ void DLParser_MoveWord_Conker( MicroCodeCommand command )
 	}
 	break;
 	default:
+		#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 		DL_PF("     G_MoveWord_Conker: Unknown");
+		#endif
 		break;
   }
+
+#else
+	u32 type = (command.inst.cmd0 >> 16) & 0xFF;
+
+	if( type != G_MW_NUMLIGHT )
+	{
+		DLParser_GBI2_MoveWord( command );
+	}
+	else
+	{
+		u32 num_lights = command.inst.cmd1 / 48;
+			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+		DL_PF("    G_MW_NUMLIGHT: %d", num_lights);
+#endif
+		gRenderer->SetNumLights(num_lights);
+	}
+#endif
 }
 
 

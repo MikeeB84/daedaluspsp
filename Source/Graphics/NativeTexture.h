@@ -21,25 +21,28 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef GRAPHICS_NATIVETEXTURE_H_
 #define GRAPHICS_NATIVETEXTURE_H_
 
+#include "Utility/RefCounted.h"
+
 #include "TextureFormat.h"
 
-#include <memory>
-#include <filesystem>
-#include <glm/glm.hpp>
+#include "Math/Vector2.h"
 
+#ifdef DAEDALUS_GL
+#include "SysGL/GL.h"
+#endif
 
 class c32;
 
-class CNativeTexture 
+class CNativeTexture : public CRefCounted
 {
+	friend class CRefPtr<CNativeTexture>::_NoAddRefRelease<CNativeTexture>;
 
-		public:
 		CNativeTexture( u32 w, u32 h, ETextureFormat texture_format );
 		~CNativeTexture();
 
 	public:
-		static	std::shared_ptr<CNativeTexture>		Create( u32 width, u32 height, ETextureFormat texture_format );
-		static	std::shared_ptr<CNativeTexture>		CreateFromPng( const std::filesystem::path p_filename, ETextureFormat texture_format );
+		static	CRefPtr<CNativeTexture>		Create( u32 width, u32 height, ETextureFormat texture_format );
+		static	CRefPtr<CNativeTexture>		CreateFromPng( const char * p_filename, ETextureFormat texture_format );
 
 		void							InstallTexture() const;
 
@@ -57,9 +60,10 @@ class CNativeTexture
 		inline const void *				GetData() const					{ return mpData; }
 		inline void *					GetData()						{ return mpData; }
 
-
+#ifdef DAEDALUS_PSP
 		inline f32						GetScaleX() const				{ return mScale.x; }
 		inline f32						GetScaleY() const				{ return mScale.y; }
+#endif
 
 		u32								GetBytesRequired() const;
 		bool							HasData() const;				// If we run out of texture memory, this will return true
@@ -75,14 +79,19 @@ class CNativeTexture
 		void *				mpData;
 		void *				mpPalette;
 
+#ifdef DAEDALUS_GL
+		GLuint				mTextureId;
+#endif
 
-		glm::vec2					mScale;
+#ifdef DAEDALUS_PSP
+		v2					mScale;
 		bool				mIsDataVidMem;
 		bool				mIsPaletteVidMem;
 		bool				mIsSwizzled;
 #ifdef DAEDALUS_ENABLE_ASSERTS
 		bool				mPaletteSet;
 #endif
+#endif // DAEDALUS_PSP
 };
 
 #endif // GRAPHICS_NATIVETEXTURE_H_

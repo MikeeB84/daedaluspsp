@@ -23,10 +23,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdlib.h>
 
 #include <vector>
-#include <memory> 
 
-#include "DynaRec/Trace.h"
-#include "DynaRec/RegisterSpan.h"
+#include "Trace.h"
+#include "RegisterSpan.h"
 
 
 class CFragment;
@@ -48,16 +47,10 @@ public:
 
 	EUpdateTraceStatus	UpdateTrace( u32 address, bool branch_delay_slot, bool branch_taken, OpCode op_code, CFragment * p_fragment );
 	void				StopTrace( u32 exit_address );
-	CFragment *			CreateFragment( std::shared_ptr<CCodeBufferManager> p_manager );
+	CFragment *			CreateFragment( CCodeBufferManager * p_manager );
 	void				AbortTrace();
 
 	bool				IsTraceActive() const						{ return mTracing; }
-
-	// True if the trace recorded so far can be turned into a fragment right now:
-	// at least one instruction, and not part way through a branch.
-	bool				CanStopTrace() const;
-	u32					GetTraceLength() const						{ return mTraceBuffer.size(); }
-	u32					GetTraceEntryAddress( u32 i ) const			{ return mTraceBuffer[ i ].Address; }
 #ifdef DAEDALUS_ENABLE_ASSERTS
 	u32					GetStartTraceAddress() const				{ DAEDALUS_ASSERT_Q( mTracing ); return mStartTraceAddress; }
 #else

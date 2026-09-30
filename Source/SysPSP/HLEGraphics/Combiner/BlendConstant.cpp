@@ -1,9 +1,9 @@
+#include "stdafx.h"
+#include "BlendConstant.h"
 
-#include "Base/Types.h"
+#include "RenderSettings.h"
 
 #include "HLEGraphics/DaedalusVtx.h"
-#include "SysPSP/HLEGraphics/Combiner/BlendConstant.h"
-#include "SysPSP/HLEGraphics/Combiner/RenderSettings.h"
 
 CBlendConstantExpression::~CBlendConstantExpression()
 {

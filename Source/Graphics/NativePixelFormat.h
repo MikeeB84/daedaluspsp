@@ -20,16 +20,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef GRAPHICS_NATIVEPIXELFORMAT_H_
 #define GRAPHICS_NATIVEPIXELFORMAT_H_
 
-#include "Base/Macros.h"
+#include "Utility/Macros.h"
 
 struct NativePf5650
 {
 	u16	Bits;
 
-	static u16 Make( u8 r, u8 g, u8 b, u8 a [[maybe_unused]] )
+	static u16 Make( u8 r, u8 g, u8 b, u8 a )
 	{
 		// Alpha is discarded
 
+		#ifdef DAEDALUS_DEBUG_CONSOLE
+		DAEDALUS_USE( a );
+		#endif
 		return ((r >> (8-BitsR)) << ShiftR) |
 			   ((g >> (8-BitsG)) << ShiftG) |
 			   ((b >> (8-BitsB)) << ShiftB);

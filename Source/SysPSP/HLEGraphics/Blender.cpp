@@ -17,8 +17,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-
-#include "Base/Types.h"
+#include "stdafx.h"
 
 #include "HLEGraphics/DLDebug.h"
 #include "Core/ROM.h"
@@ -210,13 +209,16 @@ void InitBlenderMode( u32 blendmode )					// Set Alpha Blender mode
 		}
 		else
 		{
-		#ifdef DAEDALUS_DEBUG_DISPLAYLIST
+#ifdef DAEDALUS_DEBUG_DISPLAYLIST
 			DebugBlender( blendmode );
 			DL_PF( "		 Blend: SRCALPHA/INVSRCALPHA (default: 0x%04x)", blendmode );
-			#endif
-
+#endif
 			sceGuBlendFunc( GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
 		}
 		break;
 	}
 }
+
+//*****************************************************************************
+//
+//*****************************************************************************

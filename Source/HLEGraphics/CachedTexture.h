@@ -21,9 +21,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef HLEGRAPHICS_CACHEDTEXTURE_H_
 #define HLEGRAPHICS_CACHEDTEXTURE_H_
 
+#include "Utility/RefCounted.h"
 
 #include "Graphics/NativeTexture.h"
-#include "HLEGraphics/TextureInfo.h"
+#include "TextureInfo.h"
 
 extern u32 gRDPFrame;
 
@@ -36,11 +37,11 @@ class CachedTexture
 	public:
 		static CachedTexture *			Create( const TextureInfo & ti );
 
-		inline const std::shared_ptr<CNativeTexture> &	GetTexture() const			{ return mpTexture; }
+		inline const CRefPtr<CNativeTexture> &	GetTexture() const			{ return mpTexture; }
 		inline const TextureInfo &		GetTextureInfo() const				{ return mTextureInfo; }
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-		static void						DumpTexture( const TextureInfo & ti, const std::shared_ptr<CNativeTexture> texture );
+		static void						DumpTexture( const TextureInfo & ti, const CNativeTexture * texture );
 #endif
 		bool							HasExpired() const;
 
@@ -55,7 +56,7 @@ class CachedTexture
 	private:
 		const TextureInfo				mTextureInfo;
 
-		std::shared_ptr<CNativeTexture>			mpTexture;
+		CRefPtr<CNativeTexture>			mpTexture;
 
 		u32								mTextureContentsHash;
 		u32								mFrameLastUpToDate;	// Frame # that this was last updated

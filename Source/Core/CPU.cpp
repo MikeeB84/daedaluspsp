@@ -19,42 +19,43 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 
 // Stuff to handle Processor
-
-#include "Base/Types.h"
-#include "Core/CPU.h"
+#include "stdafx.h"
+#include "CPU.h"
 
 #include <algorithm>
 #include <string>
 #include <vector>
-#include <mutex>
-#include <cstring>
 
-#include "Interface/ConfigOptions.h"
-#include "Interface/Cheats.h"
-#include "Core/Dynamo.h"
-#include "Core/Interpret.h"
-#include "Core/Interrupt.h"
-#include "Core/Memory.h"
-#include "Core/R4300.h"
-#include "Debug/Registers.h"					// For REG_?? defines
-#include "Core/ROM.h"
-#include "RomFile/ROMBuffer.h"
-#include "Core/RSP_HLE.h"
-#include "Core/Save.h"
-#include "Interface/SaveState.h"
+#include "Cheats.h"
+#include "Dynamo.h"
+#include "Interpret.h"
+#include "Interrupt.h"
+#include "Memory.h"
+#include "R4300.h"
+#include "Registers.h"					// For REG_?? defines
+#include "ROM.h"
+#include "ROMBuffer.h"
+#include "RSP_HLE.h"
+#include "Save.h"
+#include "SaveState.h"
+
+#include "Config/ConfigOptions.h"
 #include "Debug/DBGConsole.h"
 #include "Debug/DebugLog.h"
-#include "Ultra/ultra_R4300.h"
-#include "System/SystemInit.h"
-#include "System/AtomicPrimitives.h"
+#include "OSHLE/ultra_R4300.h"
+#include "System/System.h"
+#include "Utility/AtomicPrimitives.h"
 #include "Utility/FramerateLimiter.h"
 #include "Utility/Hash.h"
-#include "Base/Macros.h"
-#include "Debug/PrintOpCode.h"
-#include "Debug/Synchroniser.h"
-#include "System/Thread/Thread.h"
+#include "Utility/Macros.h"
+#include "Utility/PrintOpCode.h"
+#include "Utility/Synchroniser.h"
+#include "Utility/Thread.h"
+#include "Utility/Mutex.h"
 
-
+#ifdef DAEDALUS_W32
+#include "Plugins/AudioPlugin.h"
+#endif
 
 extern void R4300_Init();
 
@@ -62,22 +63,22 @@ extern void R4300_Init();
 //	New dynarec engine
 //
 #ifdef DAEDALUS_PROFILE_EXECUTION
-u64					gTotalInstructionsExecuted = 0;
-u64					gTotalInstructionsEmulated = 0;
+u64					gTotalInstructionsExecuted {};
+u64					gTotalInstructionsEmulated {};
 #endif
 
 #ifdef DAEDALUS_BREAKPOINTS_ENABLED
 std::vector< DBG_BreakPoint > g_BreakPoints;
 #endif
 
-volatile u32 eventQueueLocked = 0;
+volatile u32 eventQueueLocked {};
 
-static bool			gCPURunning   = false;			// CPU is actively running
-u8 *				gLastAddress     = nullptr;
-std::string			gSaveStateFilename  = "";
+static bool			gCPURunning      {false};			// CPU is actively running
+u8 *				gLastAddress       {nullptr};
+std::string			gSaveStateFilename {""};
 
-static bool			gCPUStopOnSimpleState = false;			// When stopping, try to stop in a 'simple' state (i.e. no RSP running and not in a branch delay slot)
-static std::mutex		gSaveStateMutex;
+static bool			gCPUStopOnSimpleState {false};			// When stopping, try to stop in a 'simple' state (i.e. no RSP running and not in a branch delay slot)
+static Mutex		gSaveStateMutex {};
 
 enum ESaveStateOperation
 {
@@ -86,23 +87,22 @@ enum ESaveStateOperation
 	SSO_LOAD,
 };
 
-static ESaveStateOperation		gSaveStateOperation(SSO_NONE);
+static ESaveStateOperation		gSaveStateOperation {SSO_NONE};
 
-const  u32			kInitialVIInterruptCycles = 62500;
-static u32			gVerticalInterrupts = 0;
-static u32			VI_INTR_CYCLES(kInitialVIInterruptCycles);
+const  u32			kInitialVIInterruptCycles {62500};
+static u32			gVerticalInterrupts {};
+static u32			VI_INTR_CYCLES {kInitialVIInterruptCycles};
 
 #ifdef USE_SCRATCH_PAD
-SCPUState *gPtrCPUState = (SCPUState*)0x10000;
+SCPUState *gPtrCPUState {(SCPUState*)0x10000};
 #else
- alignas(CACHE_ALIGN) SCPUState gCPUState;
+ALIGNED_GLOBAL(SCPUState, gCPUState, CACHE_ALIGN);
 #endif
 
-static bool	CPU_IsStateSimple();
+static bool	CPU_IsStateSimple()		   DAEDALUS_ATTRIBUTE_CONST;
 void (* g_pCPUCore)();
 
-using VblCallbackFn = void (*)(void * arg);
-
+typedef void (*VblCallbackFn)(void * arg);
 struct VblCallback
 {
 	VblCallbackFn		Fn;
@@ -114,7 +114,6 @@ static std::vector<VblCallback>		gVblCallbacks;
 
 void CPU_RegisterVblCallback(VblCallbackFn fn, void * arg)
 {
-	
 	VblCallback callback = { fn, arg };
 	gVblCallbacks.push_back(callback);
 }
@@ -158,7 +157,7 @@ void CPU_AddEvent( s32 count, ECPUEventType event_type )
 	DAEDALUS_ASSERT( count > 0, "Count is invalid" );
 	DAEDALUS_ASSERT( gCPUState.NumEvents < MAX_CPU_EVENTS, "Too many events" );
 #endif
-	u32 event_idx = 0;
+	u32 event_idx {};
 	for( event_idx = 0; event_idx < gCPUState.NumEvents; ++event_idx )
 	{
 		CPUEvent & event = gCPUState.Events[ event_idx ];
@@ -171,7 +170,7 @@ void CPU_AddEvent( s32 count, ECPUEventType event_type )
 			//
 			event.mCount -= count;
 
-			u32 num_to_copy  = gCPUState.NumEvents - event_idx;
+			u32 num_to_copy {gCPUState.NumEvents - event_idx};
 			if( num_to_copy > 0 )
 			{
 				memmove( &gCPUState.Events[ event_idx+1 ], &gCPUState.Events[ event_idx ], num_to_copy * sizeof( CPUEvent ) );
@@ -203,7 +202,7 @@ static void CPU_SetCompareEvent( s32 count )
 		//
 		//	Remove any existing compare events. Need to adjust any subsequent timer's count.
 		//
-		for( u32 i = 0; i < gCPUState.NumEvents; ++i )
+		for( u32 i {}; i < gCPUState.NumEvents; ++i )
 		{
 			if( gCPUState.Events[ i ].mEventType == CPU_EVENT_COMPARE )
 			{
@@ -213,7 +212,7 @@ static void CPU_SetCompareEvent( s32 count )
 				if( i+1 < gCPUState.NumEvents )
 				{
 					gCPUState.Events[ i+1 ].mCount += gCPUState.Events[ i ].mCount;
-					u32 num_to_copy = gCPUState.NumEvents - (i+1);
+					u32 num_to_copy {gCPUState.NumEvents - (i+1)};
 					memmove( &gCPUState.Events[ i ], &gCPUState.Events[ i+1 ], num_to_copy * sizeof( CPUEvent ) );
 				}
 				gCPUState.NumEvents--;
@@ -237,7 +236,7 @@ static ECPUEventType CPU_PopEvent()
 
 	ECPUEventType event_type = gCPUState.Events[ 0 ].mEventType;
 
-	u32	num_to_copy = gCPUState.NumEvents - 1;
+	u32	num_to_copy {gCPUState.NumEvents - 1};
 	if( num_to_copy > 0 )
 	{
 		memmove( &gCPUState.Events[ 0 ], &gCPUState.Events[ 1 ], num_to_copy * sizeof( CPUEvent ) );
@@ -247,15 +246,10 @@ static ECPUEventType CPU_PopEvent()
 	return event_type;
 }
 
-u32 CPU_GetVerticalInterruptCount()
-{
-	return gVerticalInterrupts;
-}
-
 // XXXX This is for savestate. Looks very suspicious to me
 u32 CPU_GetVideoInterruptEventCount()
 {
-	for( u32 i = 0; i < gCPUState.NumEvents; ++i )
+	for( u32 i {}; i < gCPUState.NumEvents; ++i )
 	{
 		if(gCPUState.Events[ i ].mEventType == CPU_EVENT_VBL)
 		{
@@ -269,7 +263,7 @@ u32 CPU_GetVideoInterruptEventCount()
 // XXXX This is for savestate. Looks very suspicious to me
 void CPU_SetVideoInterruptEventCount( u32 count )
 {
-	for( u32 i = 0; i < gCPUState.NumEvents; ++i )
+	for( u32 i {}; i < gCPUState.NumEvents; ++i )
 	{
 		if(gCPUState.Events[ i ].mEventType == CPU_EVENT_VBL)
 		{
@@ -287,7 +281,7 @@ void SCPUState::ClearStuffToDo()
 
 void SCPUState::AddJob( u32 job )
 {
-	u32 stuff =  AtomicBitSet( &StuffToDo, 0xffffffff, job );
+	u32 stuff( AtomicBitSet( &StuffToDo, 0xffffffff, job ) );
 	if( stuff != 0 )
 	{
 		Dynarec_SetCPUStuffToDo();
@@ -311,14 +305,14 @@ static const char * const kRegisterNames[] =
 	"s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
 	"t8", "t9", "k0", "k1", "gp", "sp", "fp", "ra"
 };
-DAEDALUS_STATIC_ASSERT(std::size(kRegisterNames) == 32);
+DAEDALUS_STATIC_ASSERT(ARRAYSIZE(kRegisterNames) == 32);
 
 void SCPUState::Dump()
 {
 
 	DBGConsole_Msg(0, "Emulation CPU State:");
 	{
-		for(int i = 0; i < 32; i += 4)
+		for(int i=0; i<32; i+=4)
 		{
 			DBGConsole_Msg(0, "%s:%08X %s:%08X %s:%08X %s:%08X",
 			kRegisterNames[i+0], gCPUState.CPU[i+0]._u32_0,
@@ -351,7 +345,7 @@ bool CPU_RomOpen()
 	gCPUState.MultHi._u64 = 0;
 	gCPUState.MultLo._u64 = 0;
 
-	for(u32 i = 0; i < 32; i++)
+	for(u32 i {}; i < 32; i++)
 	{
 		gCPUState.CPU[i]._u64        = 0;
 		gCPUState.CPUControl[i]._u32 = 0;
@@ -360,7 +354,7 @@ bool CPU_RomOpen()
 	}
 
 	// Init TLBs:
-	for (u32 i = 0; i < 32; i++)
+	for (u32 i {}; i < 32; i++)
 	{
 		g_TLBs[i].Reset();
 	}
@@ -398,15 +392,6 @@ bool CPU_RomOpen()
 	return true;
 }
 
-void CPU_RomClose()
-{
-#ifdef DAEDALUS_ENABLE_DYNAREC
-	#ifdef DAEDALUS_DEBUG_CONSOLE_DYNAREC
-		//This will dump the fragment cache on exit to ROMs menu
-		//CPU_DumpFragmentCache();
-	#endif
-#endif
-}
 
 static bool	CPU_IsStateSimple()
 {
@@ -434,11 +419,13 @@ void CPU_SelectCore()
 	}
 }
 
-bool CPU_RequestSaveState( const std::filesystem::path &filename )
+bool CPU_RequestSaveState( const char * filename )
 {
 	// Call SaveState_SaveToFile directly if the CPU is not running.
+	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT(gCPURunning, "Expecting the CPU to be running at this point");
-	std::scoped_lock lock(gSaveStateMutex);
+	#endif
+	MutexLock lock( &gSaveStateMutex );
 
 	// Abort if already in the process of loading/saving
 	if( gSaveStateOperation != SSO_NONE )
@@ -447,17 +434,19 @@ bool CPU_RequestSaveState( const std::filesystem::path &filename )
 	}
 
 	gSaveStateOperation = SSO_SAVE;
-	gSaveStateFilename = filename.string();
+	gSaveStateFilename = filename;
 	gCPUState.AddJob(CPU_CHANGE_CORE);
 
 	return true;
 }
 
-bool CPU_RequestLoadState( const std::filesystem::path &filename )
+bool CPU_RequestLoadState( const char * filename )
 {
 	// Call SaveState_SaveToFile directly if the CPU is not running.
+	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT(gCPURunning, "Expecting the CPU to be running at this point");
-	std::scoped_lock lock(gSaveStateMutex);
+	#endif
+	MutexLock lock( &gSaveStateMutex );
 
 	// Abort if already in the process of loading/saving
 	if( gSaveStateOperation != SSO_NONE )
@@ -466,7 +455,7 @@ bool CPU_RequestLoadState( const std::filesystem::path &filename )
 	}
 
 	gSaveStateOperation = SSO_LOAD;
-	gSaveStateFilename = filename.string();
+	gSaveStateFilename = filename;
 	gCPUState.AddJob(CPU_CHANGE_CORE);
 
 	return true;	// XXXX could fail
@@ -474,10 +463,13 @@ bool CPU_RequestLoadState( const std::filesystem::path &filename )
 
 static void HandleSaveStateOperationOnVerticalBlank()
 {
-	DAEDALUS_ASSERT(gCPURunning, "Expecting the CPU to be running at this point");
+	#ifdef DAEDALUS_ENABLE_ASSERTS
+		DAEDALUS_ASSERT(gCPURunning, "Expecting the CPU to be running at this point");
+	#endif
 	if( gSaveStateOperation == SSO_NONE )
 		return;
-	std::scoped_lock lock(gSaveStateMutex);
+
+	MutexLock lock( &gSaveStateMutex );
 
 	//
 	// Handle the save state
@@ -485,21 +477,27 @@ static void HandleSaveStateOperationOnVerticalBlank()
 	switch( gSaveStateOperation )
 	{
 	case SSO_NONE:
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 		DAEDALUS_ERROR( "Unreachable" );
+		#endif
 		break;
 	case SSO_SAVE:
+		#ifdef DAEDALUS_DEBUG_CONSOLE
 		DBGConsole_Msg(0, "Saving '%s'\n", gSaveStateFilename.c_str());
-		SaveState_SaveToFile( gSaveStateFilename );
+		#endif
+		SaveState_SaveToFile( gSaveStateFilename.c_str() );
 		gSaveStateOperation = SSO_NONE;
 		break;
 	case SSO_LOAD:
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 		DBGConsole_Msg(0, "Loading '%s'\n", gSaveStateFilename.c_str());
+		#endif
 		// Try to load the savestate immediately. If this fails, it
 		// usually means that we're running the correct rom (we should have a
 		// separate return code to check this case). In that case we
 		// stop the cpu and handle the load in
 		// HandleSaveStateOperationOnCPUStopRunning.
-		if (SaveState_LoadFromFile( gSaveStateFilename ))
+		if (SaveState_LoadFromFile( gSaveStateFilename.c_str() ))
 		{
 			CPU_ResetFragmentCache();
 			gSaveStateOperation = SSO_NONE;
@@ -520,22 +518,23 @@ static bool HandleSaveStateOperationOnCPUStopRunning()
 	if (gSaveStateOperation != SSO_LOAD)
 		return false;
 
-	std::scoped_lock lock(gSaveStateMutex);
+	MutexLock lock( &gSaveStateMutex );
 
 	gSaveStateOperation = SSO_NONE;
 
-	std::string rom_filename = SaveState_GetRom(gSaveStateFilename);
-	if (!rom_filename.empty())
+	if (const char * rom_filename = SaveState_GetRom(gSaveStateFilename.c_str()))
 	{
 		System_Close();
 		System_Open(rom_filename);
-		SaveState_LoadFromFile(gSaveStateFilename);
+		SaveState_LoadFromFile(gSaveStateFilename.c_str());
 	}
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 	else
 	{
 		DBGConsole_Msg(0, "Couldn't find matching rom for %s\n", gSaveStateFilename.c_str());
 		// Keep running with the current rom.
 	}
+	#endif
 
 	return true;
 }
@@ -549,7 +548,9 @@ bool CPU_Run()
 	{
 		gCPURunning = true;
 		gCPUStopOnSimpleState = false;
+		#ifdef DAEDALUS_ENABLE_ASSERTS
 		DAEDALUS_ASSERT(gSaveStateOperation == SSO_NONE, "Shouldn't have a save state operation queued.");
+		#endif
 		RESET_EVENT_QUEUE_LOCK();
 
 		while (gCPURunning)
@@ -560,13 +561,18 @@ bool CPU_Run()
 		if (!HandleSaveStateOperationOnCPUStopRunning())
 			break;
 	}
+
+	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT(!gCPURunning, "gCPURunning should be false by now.");
+	#endif
 	return true;
 }
 
 void CPU_Halt( const char * reason )
 {
+	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg( 0, "CPU Halting: %s", reason );
+	#endif
 	gCPUStopOnSimpleState = true;
 	gCPUState.AddJob( CPU_STOP_RUNNING );
 }
@@ -647,7 +653,7 @@ void CPU_HANDLE_COUNT_INTERRUPT()
 	case CPU_EVENT_VBL:
 		{
 			//Todo: Work on VI_INTR_CYCLES should be 62500 * (60/Real game FPS)
-			u32 vertical_sync_reg = Memory_VI_GetRegister( VI_V_SYNC_REG );
+			u32 vertical_sync_reg {Memory_VI_GetRegister( VI_V_SYNC_REG )};
 			if (vertical_sync_reg == 0)
 			{
 				VI_INTR_CYCLES = 62500;
@@ -669,7 +675,10 @@ void CPU_HANDLE_COUNT_INTERRUPT()
 			gVerticalInterrupts++;
 
 			FramerateLimiter_Limit();
-
+#ifdef DAEDALUS_W32
+			if (gAudioPlugin != nullptr)
+				gAudioPlugin->Update(false);
+#endif
 			Memory_MI_SetRegisterBits(MI_INTR_REG, MI_INTR_VI);
 			R4300_Interrupt_UpdateCause3();
 
@@ -682,15 +691,16 @@ void CPU_HANDLE_COUNT_INTERRUPT()
 			//   N cycles, but that would have a small impact on framerate (it would
 			//   interrupt the dynamo tracer for instance)
 			// TODO(strmnnrmn): should register this with CPU_RegisterVblCallback.
-			 if ((gVerticalInterrupts & 0x3F) == 0) { // once every 60 VBLs
+			if ((gVerticalInterrupts & 0x3F) == 0) // once every 60 VBLs
 				Save_Flush();
-				for (size_t i = 0; i < gVblCallbacks.size(); ++i)
-				{
-					VblCallback & callback = gVblCallbacks[i];
-					callback.Fn(callback.Arg);
-				}
 
+				//TESTING
+			for (size_t i {}; i < gVblCallbacks.size(); ++i)
+			{
+				VblCallback & callback = gVblCallbacks[i];
+				callback.Fn(callback.Arg);
 			}
+
 			HandleSaveStateOperationOnVerticalBlank();
 		}
 		break;
@@ -702,7 +712,7 @@ void CPU_HANDLE_COUNT_INTERRUPT()
 		break;
 	case CPU_EVENT_AUDIO:
 		{
-			u32 status = Memory_SP_SetRegisterBits(SP_STATUS_REG, SP_STATUS_TASKDONE|SP_STATUS_YIELDED|SP_STATUS_BROKE|SP_STATUS_HALT);
+			u32 status {Memory_SP_SetRegisterBits(SP_STATUS_REG, SP_STATUS_TASKDONE|SP_STATUS_YIELDED|SP_STATUS_BROKE|SP_STATUS_HALT)};
 			if( status & SP_STATUS_INTR_BREAK )
 				CPU_AddEvent(4000, CPU_EVENT_SPINT);
 		}
@@ -711,6 +721,8 @@ void CPU_HANDLE_COUNT_INTERRUPT()
 		Memory_MI_SetRegisterBits(MI_INTR_REG, MI_INTR_SP);
 		R4300_Interrupt_UpdateCause3();
 		break;
+	default:
+		NODEFAULT;
 	}
 
 	#ifdef DAEDALUS_ENABLE_ASSERTS
@@ -738,7 +750,7 @@ void CPU_SetCompare(u32 value)
 		{
 			// NB, value can be less than COUNT here, which indicates that the counter is close to wrapping.
 			// Don't do anything special to handle this - just treat delta as an unsigned value.
-			u32 delta = value - gCPUState.CPUControl[C0_COUNT]._u32;
+			u32 delta {value - gCPUState.CPUControl[C0_COUNT]._u32};
 
 			// This fires a lot for Zelda OoT. It's benign.
 			// If seems to keep setting a delta of 140624981 when the counter is close to wrapping.
@@ -805,7 +817,7 @@ void CPU_ExecuteOpRaw( u32 count, u32 address, OpCode op_code, CPU_Instruction p
 
 extern "C"
 {
-void  CPU_UpdateCounter( u32 ops_executed )
+void R4300_CALL_TYPE CPU_UpdateCounter( u32 ops_executed )
 {
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT( ops_executed > 0, "Expecting at least one op" );
@@ -816,7 +828,7 @@ void  CPU_UpdateCounter( u32 ops_executed )
 	gTotalInstructionsExecuted += ops_executed;
 #endif
 
-	const u32 cycles = ops_executed * COUNTER_INCREMENT_PER_OP;
+	const u32 cycles {ops_executed * COUNTER_INCREMENT_PER_OP};
 
 	// Increment count register
 	gCPUState.CPUControl[C0_COUNT]._u32 += cycles;
@@ -835,7 +847,7 @@ void CPU_UpdateCounterNoInterrupt( u32 ops_executed )
 
 	if( ops_executed > 0 )
 	{
-		const u32 cycles  =ops_executed * COUNTER_INCREMENT_PER_OP};
+		const u32 cycles {ops_executed * COUNTER_INCREMENT_PER_OP};
 
 #ifdef DAEDALUS_PROFILE_EXECUTION
 		gTotalInstructionsExecuted += ops_executed;
@@ -857,15 +869,11 @@ void CPU_UpdateCounterNoInterrupt( u32 ops_executed )
 // Return true if change the core
 bool CPU_CheckStuffToDo()
 {
-    // Get jobs to do
-    u32 stuff_to_do = gCPUState.GetStuffToDo();
+	// We do this in a slightly different order to ensure that
+	// any interrupts are taken care of before we execute an op
+// Process Interrupts/Exceptions on a priority basis
+		// Call most likely first!
 
-    // Early return if nothing to do
-    if (stuff_to_do == 0) {
-        return false;
-    }
-
-    // Process Interrupts/Exceptions on a priority basis using a switch statement
 		if( gCPUState.GetStuffToDo() & CPU_CHECK_INTERRUPTS )
 		{
 			R4300_Handle_Interrupt();
@@ -892,9 +900,8 @@ bool CPU_CheckStuffToDo()
 	return false;
 }
 
-// FIX ME: This gets called alot
 // Return true if the CPU is running
-bool CPU_IsRunning()	
-{	
-	return gCPURunning;	
+bool CPU_IsRunning()
+{
+	return gCPURunning;
 }

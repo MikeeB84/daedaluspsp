@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DYNAREC_INDIRECTEXITMAP_H_
 #define DYNAREC_INDIRECTEXITMAP_H_
 
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 class CFragment;
 class CFragmentCache;
@@ -41,6 +41,6 @@ class CIndirectExitMap
 //
 //	C-stub to allow easy access from dynarec code
 //
-extern "C" { const void *	 IndirectExitMap_Lookup( CIndirectExitMap * p_map, u32 exit_address ); }
+extern "C" { const void *	R4300_CALL_TYPE IndirectExitMap_Lookup( CIndirectExitMap * p_map, u32 exit_address ); }
 
 #endif // DYNAREC_INDIRECTEXITMAP_H_

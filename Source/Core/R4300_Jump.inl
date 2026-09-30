@@ -98,6 +98,7 @@ CPU_Instruction R4300SpecialInstruction[64] = {
  */
 
 CPU_Instruction R4300RegImmInstruction[32] = {
+
 	R4300_RegImm_BLTZ,   R4300_RegImm_BGEZ,   R4300_RegImm_BLTZL,   R4300_RegImm_BGEZL,   R4300_RegImm_Unk,  R4300_RegImm_Unk, R4300_RegImm_Unk,  R4300_RegImm_Unk,
 	R4300_RegImm_TGEI,   R4300_RegImm_TGEIU,  R4300_RegImm_TLTI,    R4300_RegImm_TLTIU,   R4300_RegImm_TEQI, R4300_RegImm_Unk, R4300_RegImm_TNEI, R4300_RegImm_Unk,
 	R4300_RegImm_BLTZAL, R4300_RegImm_BGEZAL, R4300_RegImm_BLTZALL, R4300_RegImm_BGEZALL, R4300_RegImm_Unk,  R4300_RegImm_Unk, R4300_RegImm_Unk,  R4300_RegImm_Unk,
@@ -263,21 +264,21 @@ CPU_Instruction R4300Cop1DInstruction[64] =
 };
 
 
-void  R4300_Special( u32	op_code_bits  ) { R4300_CALL_MAKE_OP( op_code ); R4300SpecialInstruction[ op_code.spec_op ]( R4300_CALL_ARGUMENTS ); }
-void  R4300_RegImm( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300RegImmInstruction[ op_code.regimm_op ]( R4300_CALL_ARGUMENTS );     }
-void  R4300_CoPro0( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300Cop0Instruction[ op_code.cop0_op ]( R4300_CALL_ARGUMENTS );  }
-void  R4300_CoPro1( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300Cop1Instruction[ op_code.cop1_op ]( R4300_CALL_ARGUMENTS );  }
-void  R4300_Cop0_TLB( u32	op_code_bits  ) { R4300_CALL_MAKE_OP( op_code ); R4300TLBInstruction[ op_code.cop0tlb_funct ]( R4300_CALL_ARGUMENTS ); }
-void  R4300_Cop1_BCInstr( u32	op_code_bits  ) { R4300_CALL_MAKE_OP( op_code ); R4300Cop1BC1Instruction[ op_code.cop1_bc ]( R4300_CALL_ARGUMENTS ); }
-void  R4300_Cop1_SInstr( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300Cop1SInstruction[ op_code.cop1_funct ]( R4300_CALL_ARGUMENTS ); }
-void  R4300_Cop1_DInstr( u32	op_code_bits  )
+void R4300_CALL_TYPE R4300_Special( u32	op_code_bits  ) { R4300_CALL_MAKE_OP( op_code ); R4300SpecialInstruction[ op_code.spec_op ]( R4300_CALL_ARGUMENTS ); }
+void R4300_CALL_TYPE R4300_RegImm( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300RegImmInstruction[ op_code.regimm_op ]( R4300_CALL_ARGUMENTS );     }
+void R4300_CALL_TYPE R4300_CoPro0( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300Cop0Instruction[ op_code.cop0_op ]( R4300_CALL_ARGUMENTS );  }
+void R4300_CALL_TYPE R4300_CoPro1( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300Cop1Instruction[ op_code.cop1_op ]( R4300_CALL_ARGUMENTS );  }
+void R4300_CALL_TYPE R4300_Cop0_TLB( u32	op_code_bits  ) { R4300_CALL_MAKE_OP( op_code ); R4300TLBInstruction[ op_code.cop0tlb_funct ]( R4300_CALL_ARGUMENTS ); }
+void R4300_CALL_TYPE R4300_Cop1_BCInstr( u32	op_code_bits  ) { R4300_CALL_MAKE_OP( op_code ); R4300Cop1BC1Instruction[ op_code.cop1_bc ]( R4300_CALL_ARGUMENTS ); }
+void R4300_CALL_TYPE R4300_Cop1_SInstr( u32	op_code_bits  )  { R4300_CALL_MAKE_OP( op_code ); R4300Cop1SInstruction[ op_code.cop1_funct ]( R4300_CALL_ARGUMENTS ); }
+void R4300_CALL_TYPE R4300_Cop1_DInstr( u32	op_code_bits  )
 {
 	R4300_CALL_MAKE_OP( op_code );
 
 	R4300Cop1DInstruction[ op_code.cop1_funct ]( R4300_CALL_ARGUMENTS );
 }
 
-void  R4300_Cop1_LInstr( u32	op_code_bits  )
+void R4300_CALL_TYPE R4300_Cop1_LInstr( u32	op_code_bits  )
 {
 	R4300_CALL_MAKE_OP( op_code );
 
@@ -293,7 +294,7 @@ void  R4300_Cop1_LInstr( u32	op_code_bits  )
 }
 
 
-void  R4300_Cop1_WInstr( u32	op_code_bits  )
+void R4300_CALL_TYPE R4300_Cop1_WInstr( u32	op_code_bits  )
 {
 	R4300_CALL_MAKE_OP( op_code );
 

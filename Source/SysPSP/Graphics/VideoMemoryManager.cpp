@@ -1,15 +1,15 @@
 // Taken from http://svn.ps2dev.org/filedetails.php?repname=psp&path=%2Ftrunk%2Fpspgl%2Fpspgl_vidmem.c&rev=0&sc=0
 
-
-#include "Base/Types.h"
+#include "stdafx.h"
+#include "VideoMemoryManager.h"
 
 #include <stdio.h>
+
 #include <pspge.h>
 
 #include "Utility/VolatileMem.h"
 #include "Utility/MemoryHeap.h"
-#include "Utility/MathUtil.h"
-#include "SysPSP/Graphics/VideoMemoryManager.h"
+#include "Math/MathUtil.h"
 
 const u32 ERAM(3 * 512 * 1024);	//Amount of extra (volatile)RAM to use for textures in addition to VRAM //Corn
 //*****************************************************************************
@@ -47,7 +47,7 @@ template<> bool CSingleton< CVideoMemoryManager >::Create()
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT_Q(mpInstance == nullptr);
 #endif
-	mpInstance = std::make_shared<IVideoMemoryManager>();
+	mpInstance = new IVideoMemoryManager();
 	return mpInstance != nullptr;
 }
 
@@ -55,8 +55,8 @@ template<> bool CSingleton< CVideoMemoryManager >::Create()
 //
 //*****************************************************************************
 IVideoMemoryManager::IVideoMemoryManager()
-:	mVideoMemoryHeap( CMemoryHeap::Create( make_uncached_ptr( sceGeEdramGetAddr() ), sceGeEdramGetSize() ) )
-,	mRamMemoryHeap( CMemoryHeap::Create( make_uncached_ptr( (void*)(((u32)malloc_volatile(ERAM + 0xF) + 0xF) & ~0xF) ), ERAM ) )
+:	mVideoMemoryHeap( CMemoryHeap::Create( MAKE_UNCACHED_PTR( sceGeEdramGetAddr() ), sceGeEdramGetSize() ) )
+,	mRamMemoryHeap( CMemoryHeap::Create( MAKE_UNCACHED_PTR( (void*)(((u32)malloc_volatile(ERAM + 0xF) + 0xF) & ~0xF) ), ERAM ) )
 //,	mRamMemoryHeap( CMemoryHeap::Create( 1 * 1024 * 1024 ) )
 {
 	printf( "vram base: %p\n", sceGeEdramGetAddr() );
@@ -77,7 +77,7 @@ IVideoMemoryManager::~IVideoMemoryManager()
 //*****************************************************************************
 bool IVideoMemoryManager::Alloc( u32 size, void ** data, bool * isvidmem )
 {
-	void *mem = nullptr;
+	void * mem;
 
 	// Ensure that all memory is 16-byte aligned
 	size = AlignPow2( size, 16 );

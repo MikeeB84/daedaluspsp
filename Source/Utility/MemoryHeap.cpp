@@ -18,15 +18,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 //Define line below to show amount of allocated VRAM //Corn
-#include <cstdio>
+//#define SHOW_MEM
 
-#include "Base/Types.h"
-#include "Utility/MemoryHeap.h"
+#include "stdafx.h"
+#include "MemoryHeap.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-#include "Utility/MathUtil.h"
+#include "Math/MathUtil.h"
 
 
 //

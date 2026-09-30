@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef UTILITY_FRAMERATELIMITER_H_
 #define UTILITY_FRAMERATELIMITER_H_
 
-#include "Base/Types.h"
+#include "Utility/DaedalusTypes.h"
 
 extern u32		gSpeedSyncEnabled;
 
@@ -30,8 +30,7 @@ f32				FramerateLimiter_GetSync();	// Returns fraction of real n64 we're running
 u32				FramerateLimiter_GetTvFrequencyHz();
 
 // Override the sync function, e.g. if the audio plugin wants to control sync.
-using FramerateSyncFn = void (*)(void * arg);
-
+typedef void (*FramerateSyncFn)(void * arg);
 void			FramerateLimiter_SetAuxillarySyncFunction(FramerateSyncFn fn, void * arg);
 
 #endif // UTILITY_FRAMERATELIMITER_H_

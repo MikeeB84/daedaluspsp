@@ -17,62 +17,44 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include "stdafx.h"
 
-#include "Base/Types.h"
-#include <cstring> 
-#include <fstream>
+#include "RSP_HLE.h"
 
-#include "Core/RSP_HLE.h"
-
-#include "Core/Interrupt.h"
-#include "Core/Memory.h"
+#include "Interrupt.h"
+#include "Memory.h"
 #include "Debug/DBGConsole.h"
 #include "Debug/DebugLog.h"
 #include "Debug/Dump.h"			// For Dump_GetDumpDirectory()
-#include "Utility/MathUtil.h"
-#include "Ultra/ultra_mbi.h"
-#include "Ultra/ultra_rcp.h"
-#include "Ultra/ultra_sptask.h"
-#include "HLEAudio/AudioPlugin.h"
-#include "HLEGraphics/GraphicsPlugin.h"
-#include "Utility/BatchTest.h"
-
-#include "Debug/PrintOpCode.h"
+#include "Math/MathUtil.h"
+#include "OSHLE/ultra_mbi.h"
+#include "OSHLE/ultra_rcp.h"
+#include "OSHLE/ultra_sptask.h"
+#include "Plugins/AudioPlugin.h"
+#include "Plugins/GraphicsPlugin.h"
+#include "Test/BatchTest.h"
+#include "Utility/IO.h"
+#include "Utility/PrintOpCode.h"
 #include "Utility/Profiler.h"
-#include "SysPSP/Utility/PerfStats.h"
 
-static const bool	gGraphicsEnabled = true;
-static const bool	gAudioEnabled	 = true;
-
-extern void jpeg_decode_PS(OSTask *task);
-extern void jpeg_decode_PS0(OSTask *task);
-extern void jpeg_decode_OB(OSTask *task);
-
-
-/* RE2Task.cpp + HqvmTask.cpp */
-extern "C" {
-	//extern void resize_bilinear_task(OSTask *task);
-	//extern void decode_video_frame_task(OSTask *task);
-	//extern void fill_video_double_buffer_task(OSTask *task);
-	extern void hvqm2_decode_sp1_task(OSTask *task);
-};
+static const bool	gGraphicsEnabled {true};
+static const bool	gAudioEnabled	 {true};
 
 #ifdef DAEDALUS_DEBUG_CONSOLE
 #if 0
 static void RDP_DumpRSPCode(char * name, u32 crc, u32 * mem_base, u32 pc_base, u32 len)
 {
-	std::string filename = FORMAT_NAMESPACE::format("task_dump_{}_crc_0x{}.txt", name, crc);
+	char filename[100];
+	sprintf(filename, "task_dump_%s_crc_0x%08x.txt", name, crc);
 
-	// snprintf(filename, sizeof(filename), "task_dump_%s_crc_0x%08x.txt", name, crc);
+	IO::Filename filepath;
+	Dump_GetDumpDirectory(filepath, "rsp_dumps");
+	IO::Path::Append(filepath, filename);
 
-	std::filesystem::path filepath = setBasePath("rsp_dumps");
-	std::filesystem::create_directory(filepath);
-	filepath /= filename;
+	FILE * fp = fopen(filepath, "w");
+	if (fp == nullptr)
+		return;
 
-	std::fstream fp(filepath, std::ios::in);
-
-	if (fp.is_open())
-	{
 	for (u32 i = 0; i < len; i+=4)
 	{
 		OpCode op;
@@ -82,12 +64,42 @@ static void RDP_DumpRSPCode(char * name, u32 crc, u32 * mem_base, u32 pc_base, u
 		char opinfo[400];
 		SprintRSPOpCodeInfo( opinfo, pc + pc_base, op );
 
-		fp << FORMAT_NAMESPACE::format("0x{:08x}: <0x{:08x}> {}\n", pc + pc_base, op._u32, opinfo);
+		fprintf(fp, "0x%08x: <0x%08x> %s\n", pc + pc_base, op._u32, opinfo);
+		//fprintf(fp, "<0x%08x>\n", dwOpCode);
 	}
-	}
+
+	fclose(fp);
 }
 #endif
 
+#if 0
+static void RDP_DumpRSPData(char * name, u32 crc, u32 * mem_base, u32 pc_base, u32 len)
+{
+	char filename[100];
+	sprintf(filename, "task_data_dump_%s_crc_0x%08x.txt", name, crc);
+
+	IO::Filename filepath;
+	Dump_GetDumpDirectory(filepath, "rsp_dumps");
+	IO::Path::Append(filepath, filename);
+
+	FILE * fp = fopen(filepath, "w");
+	if (fp == nullptr)
+		return;
+
+	for (u32 i = 0; i < len; i+=4)
+	{
+		u32 pc = i & 0x0FFF;
+		u32 data = mem_base[i/4];
+
+		fprintf(fp, "0x%08x: 0x%08x\n", pc + pc_base, data);
+	}
+
+	fclose(fp);
+}
+#endif
+
+
+//
 
 #if 0
 static void	RSP_HLE_DumpTaskInfo( const OSTask * pTask )
@@ -117,7 +129,7 @@ void RSP_HLE_Finished(u32 setbits)
 	//
 	// Set the SP flags appropriately. The RSP is not running anyway, no need to stop it
 	//
-	u32 status = Memory_SP_SetRegisterBits(SP_STATUS_REG, setbits);
+	u32 status( Memory_SP_SetRegisterBits(SP_STATUS_REG, setbits) );
 
 	//
 	// We've set the SP_STATUS_BROKE flag - better check if it causes an interrupt
@@ -135,7 +147,6 @@ void RSP_HLE_Finished(u32 setbits)
 static EProcessResult RSP_HLE_Graphics()
 {
 	DAEDALUS_PROFILE( "HLE: Graphics" );
-	DAEDALUS_PERF_SCOPE( PERF_GFX );
 
 	if (gGraphicsEnabled && gGraphicsPlugin != nullptr)
 	{
@@ -165,7 +176,6 @@ static EProcessResult RSP_HLE_Graphics()
 static EProcessResult RSP_HLE_Audio()
 {
 	DAEDALUS_PROFILE( "HLE: Audio" );
-	DAEDALUS_PERF_SCOPE( PERF_AUDIO );
 
 	if (gAudioEnabled && gAudioPlugin != nullptr)
 	{
@@ -177,7 +187,7 @@ static EProcessResult RSP_HLE_Audio()
 // RSP_HLE_Jpeg and RSP_HLE_CICX105 were borrowed from Mupen64plus
 static u32 sum_bytes(const u8 *bytes, u32 size)
 {
-    u32 sum = 0;
+    u32 sum {};
     const u8 * const bytes_end = bytes + size;
 
     while (bytes != bytes_end)
@@ -186,23 +196,26 @@ static u32 sum_bytes(const u8 *bytes, u32 size)
     return sum;
 }
 
+
+
 EProcessResult RSP_HLE_Jpeg(OSTask * task)
 {
+void jpeg_decode_PS(OSTask *task);
+void jpeg_decode_OB(OSTask *task);
+
 	// most ucode_boot procedure copy 0xf80 bytes of ucode whatever the ucode_size is.
 	// For practical purpose we use a ucode_size = min(0xf80, task->ucode_size)
-	u32 sum = sum_bytes(g_pu8RamBase + (u32)task->t.ucode , std::min<u32>(task->t.ucode_size, 0xf80) >> 1);
+	u32 sum {sum_bytes(g_pu8RamBase + (u32)task->t.ucode , Min<u32>(task->t.ucode_size, 0xf80) >> 1)};
 
 	//DBGConsole_Msg(0, "JPEG Task: Sum=0x%08x", sum);
 	switch(sum)
 	{
-	case 0x2c85a: // Pokemon Stadium Jap Exclusive jpg decompression
-		jpeg_decode_PS0(task);
-		break;
 	case 0x2caa6: // Zelda OOT, Pokemon Stadium {1,2} jpg decompression
 		jpeg_decode_PS(task);
 		break;
-	case 0x130de: // Ogre Battle & Buttom of the 9th background decompression
-	case 0x278b0:
+		 // Ogre Battle & Buttom of the 9th background decompression
+		case 0x130de:
+		case 0x278b0:
         jpeg_decode_OB(task);
 		break;
 	}
@@ -210,7 +223,9 @@ EProcessResult RSP_HLE_Jpeg(OSTask * task)
 	return PR_COMPLETED;
 }
 
-EProcessResult RSP_HLE_CICX105(OSTask * task [[maybe_unused]])
+
+
+EProcessResult RSP_HLE_CICX105(OSTask * task)
 {
     const u32 sum {sum_bytes(g_pu8SpImemBase, 0x1000 >> 1)};
 
@@ -243,19 +258,11 @@ EProcessResult RSP_HLE_CICX105(OSTask * task [[maybe_unused]])
 	return PR_COMPLETED;
 }
 
-// Pokemon Puzzle League uses this
-EProcessResult RSP_HLE_Hvqm(OSTask * task)
-{
-	hvqm2_decode_sp1_task(task);
-	return PR_COMPLETED;
-}
-
-void RSP_HLE_Reset()
-{}
 
 void RSP_HLE_ProcessTask()
 {
 	OSTask * pTask = (OSTask *)(g_pu8SpMemBase + 0x0FC0);
+
 	EProcessResult	result( PR_NOT_STARTED );
 
 	// non task
@@ -285,14 +292,15 @@ void RSP_HLE_ProcessTask()
 			// Can't handle
 			break;
 
-		case M_FBTASK:
-			result = RSP_HLE_Hvqm(pTask);
-			break;
-
 		case M_JPGTASK:
 			result = RSP_HLE_Jpeg(pTask);
 			break;
+		#ifdef DAEDALUS_ENABLE_ASSERTS
 		default:
+
+			// This can be easily handled, need to find first a game that uses this though
+			DAEDALUS_ASSERT( pTask->t.type != M_FBTASK, "FB task is not handled");
+
 			// Can't handle
 			DBGConsole_Msg(0, "Unknown task: %08x", pTask->t.type );
 			//	RSP_HLE_DumpTaskInfo( pTask );
@@ -300,6 +308,7 @@ void RSP_HLE_ProcessTask()
 			//	RDP_DumpRSPCode("unkcode", 0xDEAFF00D, (u32*)(g_pu8RamBase + (((u32)pTask->t.ucode)&0x00FFFFFF)),      0x04001080, 0x1000 - 0x80);//pTask->t.ucode_size);
 
 			break;
+			#endif
 	}
 
 	// Started and completed. No need to change cores. [synchronously]
