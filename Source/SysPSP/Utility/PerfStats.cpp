@@ -808,6 +808,7 @@ namespace
 
 	int WatchdogThread( SceSize, void * )
 	{
+		const u32 frames_at_start = gWatchdogFrames;
 		u32 last_frames = gWatchdogFrames;
 		u32 stalled_polls = 0;
 		u32 vi_at_stall = 0;
@@ -818,7 +819,8 @@ namespace
 			sceKernelDelayThread( kWatchdogPollMicroseconds );
 
 			u32 frames = gWatchdogFrames;
-			if( frames != last_frames || !CPU_IsRunning() )		// Progress, or paused in the menu
+			if( frames != last_frames || !CPU_IsRunning() ||	// Progress, or paused in the menu
+				frames == frames_at_start )						// Still booting: no frame shown yet
 			{
 				last_frames = frames;
 				stalled_polls = 0;
