@@ -137,18 +137,10 @@ static bool	Initialize()
 			CModule::Unload( HAVE_DVE );	// Stop and unload dvemgr.prx since if no video cable is connected
 	}
 
-// This Breaks gdb, better disable it in debug build
-#ifdef DAEDALUS_DEBUG_CONSOLE
+	// Show a crash screen (and write exception.txt) instead of freezing or quitting to the XMB.
+	// NB: this breaks gdb.
 extern void initExceptionHandler();
 	initExceptionHandler();
-#else
-	// Benchmark mode needs the crash handler to record a crash and carry on with the next ROM
-	if( Benchmark_IsRequested() )
-	{
-		extern void initExceptionHandler();
-		initExceptionHandler();
-	}
-#endif
 
 	HAVE_DVE = (HAVE_DVE < 0) ? 0 : 1; // 0 == no dvemgr, 1 == dvemgr
 
