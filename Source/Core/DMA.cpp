@@ -36,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "OSHLE/OSTask.h"
 #include "OSHLE/patch.h"
 #include "Utility/FastMemcpy.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 // 1 - Ignores IMEM for speed, its not needed for HLE RSP
 // 2 - Forces a linear transfer which assumes a count of 0 and skip of 0
@@ -301,6 +302,11 @@ void DMA_PI_CopyToRDRAM()
 	else
 	{
 		DBGConsole_Msg(0, "[YUnknown PI Address 0x%08x]", cart_address);
+	}
+
+	if( gPerfStatsEnabled )
+	{
+		PerfStats_NotePIDma( Memory_PI_GetRegister(PI_CART_ADDR_REG), mem_address, pi_length_reg, copy_succeeded );
 	}
 
 	if(copy_succeeded)

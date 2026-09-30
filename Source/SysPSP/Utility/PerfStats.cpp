@@ -11,6 +11,7 @@ of the License, or (at your option) any later version.
 #include "Core/CPU.h"
 #include "Core/Memory.h"
 #include "Debug/PrintOpCode.h"
+#include "RomFile/ROMBuffer.h"
 
 #include <algorithm>
 
@@ -356,6 +357,34 @@ void PerfStats_NoteFragment( u32 entry_address, const u32 * addresses, u32 count
 	gNumFragmentRuns += num_runs;
 }
 
+namespace
+{
+	struct SPIDma { u32 Cart; u32 Dram; u32 Length; bool Succeeded; };
+	const u32		kNumRecentPIDmas = 8;
+	const u32		kNumFailedPIDmas = 8;
+	SPIDma			gRecentPIDmas[ kNumRecentPIDmas ];
+	SPIDma			gFailedPIDmas[ kNumFailedPIDmas ];
+	u32				gNumPIDmas = 0;
+	u32				gNumPIDmasFailed = 0;
+	u64				gPIDmaBytes = 0;
+}
+
+void PerfStats_NotePIDma( u32 cart_address, u32 dram_address, u32 length, bool succeeded )
+{
+	SPIDma dma = { cart_address, dram_address, length, succeeded };
+	gRecentPIDmas[ gNumPIDmas % kNumRecentPIDmas ] = dma;
+	gNumPIDmas++;
+	gPIDmaBytes += length;
+	if( !succeeded )
+	{
+		if( gNumPIDmasFailed < kNumFailedPIDmas )
+		{
+			gFailedPIDmas[ gNumPIDmasFailed ] = dma;
+		}
+		gNumPIDmasFailed++;
+	}
+}
+
 void PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length )
 {
 	if( reason != FLUSH_INVALIDATE_REQUEST )
@@ -533,6 +562,27 @@ namespace
 				}
 				if( printed < info->NumOps ) fprintf( fh, "      ... %u more\n", (unsigned)(info->NumOps - printed) );
 			}
+		}
+
+		// Cartridge loads
+		{
+			fprintf( fh, "PI DMA (cart -> RDRAM): %u transfers, %u KB, %u failed. ROM size %u bytes (%s), RDRAM %u bytes\n",
+				(unsigned)gNumPIDmas, (unsigned)( gPIDmaBytes / 1024 ), (unsigned)gNumPIDmasFailed,
+				(unsigned)RomBuffer::GetRomSize(), RomBuffer::IsRomAddressFixed() ? "ROM Buffer" : "File Cache", (unsigned)gRamSize );
+			for( u32 i = 0; i < gNumPIDmasFailed && i < kNumFailedPIDmas; ++i )
+			{
+				const SPIDma & d = gFailedPIDmas[ i ];
+				fprintf( fh, "  FAILED  cart %08x -> ram %08x, %u bytes\n", (unsigned)d.Cart, (unsigned)d.Dram, (unsigned)d.Length );
+			}
+			u32 num_recent = gNumPIDmas < kNumRecentPIDmas ? gNumPIDmas : kNumRecentPIDmas;
+			for( u32 i = 0; i < num_recent; ++i )
+			{
+				const SPIDma & d = gRecentPIDmas[ ( gNumPIDmas - num_recent + i ) % kNumRecentPIDmas ];
+				fprintf( fh, "  recent  cart %08x -> ram %08x, %u bytes%s\n", (unsigned)d.Cart, (unsigned)d.Dram, (unsigned)d.Length, d.Succeeded ? "" : " FAILED" );
+			}
+			gNumPIDmas = 0;
+			gNumPIDmasFailed = 0;
+			gPIDmaBytes = 0;
 		}
 
 		// Traces

@@ -32,7 +32,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Utility/Stream.h"
 
 
-#include <cstring> 
+#include <cstring>
+#include <algorithm>
 
 #include "Graphics/GraphicsContext.h"
  #include "intraFont.h"
@@ -421,7 +422,14 @@ bool RomBuffer::CopyToRam( u8 * p_dst, u32 dst_offset, u32 dst_size, u32 src_off
 		const u8* p_src = (const u8 *)spRomData ;
 		u32	src_size = sRomSize;
 
-		return DMA_HandleTransfer( p_dst, dst_offset, dst_size, p_src, src_offset, src_size, length );
+		// A transfer that runs off the end of the ROM copies what is there (as the
+		// file cache path does) rather than nothing at all.
+		if( src_offset >= src_size )
+		{
+			return false;
+		}
+		u32 copy_length = std::min( length, src_size - src_offset );
+		return DMA_HandleTransfer( p_dst, dst_offset, dst_size, p_src, src_offset, src_size, copy_length ) && copy_length == length;
 	}
 	else
 	{

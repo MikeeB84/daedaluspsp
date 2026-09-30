@@ -92,6 +92,9 @@ void	PerfStats_CaptureAbortedTrace( u32 start_address, const u32 * addresses, u3
 // Record the instructions of a newly compiled fragment, for listing the hottest ones
 void	PerfStats_NoteFragment( u32 entry_address, const u32 * addresses, u32 count, u32 output_bytes );
 
+// PI DMA from the cartridge to RDRAM (ROM loads), for dynarec.txt
+void	PerfStats_NotePIDma( u32 cart_address, u32 dram_address, u32 length, bool succeeded );
+
 // Why the whole fragment cache was thrown away
 enum EFlushReason
 {
