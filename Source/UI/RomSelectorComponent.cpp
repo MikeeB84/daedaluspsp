@@ -328,6 +328,9 @@ void IRomSelectorComponent::DrawInfoText(  CUIContext * p_context, s32 y, const 
 	p_context->DrawTextAlign( PREVIEW_IMAGE_LEFT, PREVIEW_IMAGE_LEFT + PREVIEW_IMAGE_WIDTH, AT_RIGHT, y, value_txt, colour );
 }
 
+static bool GetCompatibilityColour( ECompatibility compatibility, c32 * colour );
+static const char * GetCompatibilityName( ECompatibility compatibility );
+
 void IRomSelectorComponent::RenderPreview()
 {
 	// Preview Image
@@ -371,6 +374,7 @@ void IRomSelectorComponent::RenderPreview()
 
 		DrawInfoText( mpContext, y, "Save:", ROM_GetSaveTypeName( p_rominfo->mSettings.SaveType ) ); y += line_height;
 		DrawInfoText( mpContext, y, "EPak:", ROM_GetExpansionPakUsageName( p_rominfo->mSettings.ExpansionPakUsage ) ); y += line_height;
+		DrawInfoText( mpContext, y, "Compat:", GetCompatibilityName( p_rominfo->mSettings.Compatibility ) ); y += line_height;
 
 	}
 	else
@@ -381,8 +385,32 @@ void IRomSelectorComponent::RenderPreview()
 
 		DrawInfoText( mpContext, y, "Save:", "" );		y += line_height;
 		DrawInfoText( mpContext, y, "EPak:", "" );		y += line_height;
+		DrawInfoText( mpContext, y, "Compat:", "" );	y += line_height;
 	}
 }
+// Colour of the compatibility square shown before each game (unrated games get none)
+static bool GetCompatibilityColour( ECompatibility compatibility, c32 * colour )
+{
+	switch( compatibility )
+	{
+	case COMPAT_GOOD:		*colour = c32( 0x30, 0xc8, 0x40 );	return true;
+	case COMPAT_PARTIAL:	*colour = c32( 0xe8, 0xc8, 0x20 );	return true;
+	case COMPAT_BROKEN:		*colour = c32( 0xe0, 0x30, 0x30 );	return true;
+	default:				return false;
+	}
+}
+
+static const char * GetCompatibilityName( ECompatibility compatibility )
+{
+	switch( compatibility )
+	{
+	case COMPAT_GOOD:		return "Playable";
+	case COMPAT_PARTIAL:	return "Slow/glitchy";
+	case COMPAT_BROKEN:		return "Crashes";
+	default:				return "Not rated";
+	}
+}
+
 void IRomSelectorComponent::RenderRomList()
 {
 	u32	line_height = mpContext->GetFontHeight() + 2 ;
@@ -396,6 +424,9 @@ void IRomSelectorComponent::RenderRomList()
 	const char * const	ptr_text = "> " ;
 
 	u32	 ptr_text_width = mpContext->GetTextWidth( ptr_text );
+	const s32 font_height = mpContext->GetFontHeight();
+	const s32 square_size = font_height > 10 ? font_height - 5 : 5;
+	const s32 square_space = square_size + 4;
 	for(u32 i = 0; i < mRomsList.size(); ++i)
 	{
 		 std::string p_gamename;
@@ -427,7 +458,13 @@ void IRomSelectorComponent::RenderRomList()
 			{
 				colour = mpContext->GetDefaultTextColour();
 			}
-			mpContext->DrawText( x + ptr_text_width, y, p_gamename, colour );
+			c32 compat_colour;
+			if( GetCompatibilityColour( mRomsList[ i ]->mSettings.Compatibility, &compat_colour ) )
+			{
+				s32 square_top = y - font_height + ( font_height - square_size ) / 2 + 1;
+				mpContext->DrawRect( x + ptr_text_width, square_top, square_size, square_size, compat_colour );
+			}
+			mpContext->DrawText( x + ptr_text_width + square_space, y, p_gamename, colour );
 		}
 		y += line_height;
 	}
