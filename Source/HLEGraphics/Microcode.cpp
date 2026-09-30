@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Base/Types.h"
 #include "HLEGraphics/Microcode.h"
+#include <cstdio>
 
 #include "Core/ROM.h"
 #include "Core/Memory.h"
@@ -42,6 +43,9 @@ static void GBIMicrocode_SetCustomArray( u32 ucode_version, u32 ucode_offset );
 
 static MicroCodeInstruction gCustomInstruction[256];
 static const char * gCustomInstructionName[256];
+
+// Last microcode detected, for the hang watchdog (hang.txt)
+char gUcodeDescription[192] = "none";
 #define SetCommand( cmd, func, name )	\
 	gCustomInstruction[ cmd ] = func;	\
 	gCustomInstructionName[ cmd ] = name;
@@ -204,6 +208,7 @@ UcodeInfo GBIMicrocode_DetectVersion( u32 code_base, u32 code_size, u32 data_bas
 		u32 ucode_offset = data.offset;
 
         GBIMicrocode_SetCustomArray(ucode_version, ucode_offset);
+        snprintf( gUcodeDescription, sizeof( gUcodeDescription ), "custom %u (based on %u), hash 0x%08x, \"%s\"", (unsigned)ucode_version, (unsigned)ucode_offset, (unsigned)code_hash, data.ucode_name );
         DBGConsole_Msg(0, "Detected Custom Ucode is: [M Ucode %d, 0x%08x, \"%s\", \"%s\"]",
                        ucode_version, code_hash, data.ucode_name, g_ROM.settings.GameName.c_str());
         return GBIMicrocode_SetCache(index, code_base, data_base, gCustomInstruction, gCustomInstructionName);
@@ -249,6 +254,7 @@ UcodeInfo GBIMicrocode_DetectVersion( u32 code_base, u32 code_size, u32 data_bas
 			}
 		}
 	}
+	snprintf( gUcodeDescription, sizeof( gUcodeDescription ), "%u, hash 0x%08x, \"%s\"", (unsigned)ucode_version, (unsigned)code_hash, str );
 	DBGConsole_Msg(0, "Detected Ucode is: [M Ucode %d, 0x%08x, \"%s\", \"%s\"]", ucode_version, code_hash, 
 		str, g_ROM.settings.GameName.c_str());
 	return GBIMicrocode_SetCache(index, code_base, data_base, gNormalInstruction[ ucode_version ], gNormalInstructionName[ ucode_version ]);

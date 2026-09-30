@@ -92,6 +92,9 @@ void	PerfStats_CaptureAbortedTrace( u32 start_address, const u32 * addresses, u3
 // Record the instructions of a newly compiled fragment, for listing the hottest ones
 void	PerfStats_NoteFragment( u32 entry_address, const u32 * addresses, u32 count, u32 output_bytes );
 
+// PI DMA from the cartridge to RDRAM (ROM loads), for dynarec.txt
+void	PerfStats_NotePIDma( u32 cart_address, u32 dram_address, u32 length, bool succeeded );
+
 // Why the whole fragment cache was thrown away
 enum EFlushReason
 {
@@ -137,6 +140,13 @@ u32		PerfStats_GetGfxPercent();		// All graphics categories
 // Append the last sample to perf.txt (buffered, written every 10 samples)
 void	PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz );
 void	PerfStats_Flush();
+
+// Hang watchdog: a background thread that writes hang.txt if the game stops presenting
+// frames for a few seconds while the CPU is meant to be running.
+extern volatile u32 gWatchdogFrames;
+inline void Watchdog_NoteFrame()	{ gWatchdogFrames = gWatchdogFrames + 1; }
+void	Watchdog_Start();
+void	Watchdog_Stop();
 
 class CPerfScope
 {

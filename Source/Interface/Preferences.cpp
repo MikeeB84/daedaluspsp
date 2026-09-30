@@ -481,10 +481,11 @@ void SRomPreferences::Reset()
 
 void SRomPreferences::Apply() const
 {
-	gOSHooksEnabled             = PatchesEnabled;
+	// roms.ini can turn these off for games known to break with them
+	gOSHooksEnabled             = PatchesEnabled && g_ROM.settings.PatchesEnabled;
 	gSpeedSyncEnabled           = SpeedSyncEnabled;
 	gDynarecEnabled             = g_ROM.settings.DynarecSupported && DynarecEnabled;
-	gDynarecLoopOptimisation	= DynarecLoopOptimisation;	// && g_ROM.settings.DynarecLoopOptimisation;
+	gDynarecLoopOptimisation	= DynarecLoopOptimisation && !g_ROM.settings.DynarecLoopOptimisationForcedOff;
 	gDynarecDoublesOptimisation	= g_ROM.settings.DynarecDoublesOptimisation || DynarecDoublesOptimisation;
 	gDoubleDisplayEnabled       = g_ROM.settings.DoubleDisplayEnabled && DoubleDisplayEnabled; // I don't know why DD won't disabled if we set ||
 	gCleanSceneEnabled          = g_ROM.settings.CleanSceneEnabled || CleanSceneEnabled;
@@ -493,7 +494,7 @@ void SRomPreferences::Apply() const
 	gVideoRateMatch             = g_ROM.settings.VideoRateMatch || VideoRateMatch;
 	gFogEnabled                 = g_ROM.settings.FogEnabled || FogEnabled;
 	gCheckTextureHashFrequency  = GetTexureHashFrequencyAsFrames( CheckTextureHashFrequency );
-	gMemoryAccessOptimisation   = g_ROM.settings.MemoryAccessOptimisation || MemoryAccessOptimisation;
+	gMemoryAccessOptimisation   = ( g_ROM.settings.MemoryAccessOptimisation || MemoryAccessOptimisation ) && !g_ROM.settings.MemoryAccessOptimisationForcedOff;
 	gFrameskipValue             = Frameskip;
 	gZoomX                      = ZoomX;
 	gCheatsEnabled              = g_ROM.settings.CheatsEnabled || CheatsEnabled;

@@ -22,7 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Types.h"
 
 
-#include <cstring> 
+#include <cstring>
+#include <strings.h>
 
 #include <set>
 #include <map>
@@ -274,6 +275,7 @@ bool IRomSettingsDB::OpenSettingsFile( const std::filesystem::path &filename )
 		if( p_section->FindProperty( "DynarecLoopOptimisation", &p_property ) )
 		{
 			settings.DynarecLoopOptimisation = p_property->GetBooleanValue( false );
+			settings.DynarecLoopOptimisationForcedOff = !p_property->GetBooleanValue( true );
 		}
 		if( p_section->FindProperty( "DynarecDoublesOptimisation", &p_property ) )
 		{
@@ -306,10 +308,18 @@ bool IRomSettingsDB::OpenSettingsFile( const std::filesystem::path &filename )
 		if( p_section->FindProperty( "MemoryAccessOptimisation", &p_property ) )
 		{
 			settings.MemoryAccessOptimisation = p_property->GetBooleanValue( false );
+			settings.MemoryAccessOptimisationForcedOff = !p_property->GetBooleanValue( true );
 		}
 		if( p_section->FindProperty( "CheatsEnabled", &p_property ) )
 		{
 			settings.CheatsEnabled = p_property->GetBooleanValue( false );
+		}
+		if( p_section->FindProperty( "Compatibility", &p_property ) )
+		{
+			const char * value = p_property->GetValue();
+			if( strcasecmp( value, "Good" ) == 0 )			settings.Compatibility = COMPAT_GOOD;
+			else if( strcasecmp( value, "Partial" ) == 0 )	settings.Compatibility = COMPAT_PARTIAL;
+			else if( strcasecmp( value, "Broken" ) == 0 )	settings.Compatibility = COMPAT_BROKEN;
 		}
 		SetSettings( id, settings );
 	}
@@ -412,6 +422,7 @@ void IRomSettingsDB::OutputSectionDetails( const RomID & id, const RomSettings &
     if (!settings.SpeedSyncEnabled)            out << "SpeedSyncEnabled=" << settings.SpeedSyncEnabled << "\n";
     if (!settings.DynarecSupported)            out << "DynarecSupported=no\n";
     if (settings.DynarecLoopOptimisation)      out << "DynarecLoopOptimisation=yes\n";
+    if (settings.DynarecLoopOptimisationForcedOff)  out << "DynarecLoopOptimisation=no\n";
     if (settings.DynarecDoublesOptimisation)   out << "DynarecDoublesOptimisation=yes\n";
     if (!settings.DoubleDisplayEnabled)        out << "DoubleDisplayEnabled=no\n";
     if (settings.CleanSceneEnabled)            out << "CleanSceneEnabled=yes\n";
@@ -420,7 +431,11 @@ void IRomSettingsDB::OutputSectionDetails( const RomID & id, const RomSettings &
     if (settings.VideoRateMatch)               out << "VideoRateMatch=yes\n";
     if (settings.FogEnabled)                   out << "FogEnabled=yes\n";
     if (settings.MemoryAccessOptimisation)     out << "MemoryAccessOptimisation=yes\n";
+    if (settings.MemoryAccessOptimisationForcedOff) out << "MemoryAccessOptimisation=no\n";
     if (settings.CheatsEnabled)                out << "CheatsEnabled=yes\n";
+    if (settings.Compatibility == COMPAT_GOOD)    out << "Compatibility=Good\n";
+    if (settings.Compatibility == COMPAT_PARTIAL) out << "Compatibility=Partial\n";
+    if (settings.Compatibility == COMPAT_BROKEN)  out << "Compatibility=Broken\n";
 
     if (settings.ExpansionPakUsage != PAK_STATUS_UNKNOWN) 
         out << "ExpansionPakUsage=" << ROM_GetExpansionPakUsageName(settings.ExpansionPakUsage) << "\n";
@@ -483,6 +498,9 @@ RomSettings::RomSettings()
 ,	FogEnabled( false )
 ,   MemoryAccessOptimisation( false )
 ,   CheatsEnabled( false )
+,	DynarecLoopOptimisationForcedOff( false )
+,	MemoryAccessOptimisationForcedOff( false )
+,	Compatibility( COMPAT_UNKNOWN )
 {
 }
 
@@ -511,4 +529,7 @@ void	RomSettings::Reset()
 	FogEnabled = false;
 	CheatsEnabled = false;
 	MemoryAccessOptimisation = false;
+	DynarecLoopOptimisationForcedOff = false;
+	MemoryAccessOptimisationForcedOff = false;
+	Compatibility = COMPAT_UNKNOWN;
 }

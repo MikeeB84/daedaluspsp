@@ -11,6 +11,7 @@ of the License, or (at your option) any later version.
 #include "Core/CPU.h"
 #include "Core/Memory.h"
 #include "Debug/PrintOpCode.h"
+#include "RomFile/ROMBuffer.h"
 
 #include <algorithm>
 
@@ -356,6 +357,34 @@ void PerfStats_NoteFragment( u32 entry_address, const u32 * addresses, u32 count
 	gNumFragmentRuns += num_runs;
 }
 
+namespace
+{
+	struct SPIDma { u32 Cart; u32 Dram; u32 Length; bool Succeeded; };
+	const u32		kNumRecentPIDmas = 8;
+	const u32		kNumFailedPIDmas = 8;
+	SPIDma			gRecentPIDmas[ kNumRecentPIDmas ];
+	SPIDma			gFailedPIDmas[ kNumFailedPIDmas ];
+	u32				gNumPIDmas = 0;
+	u32				gNumPIDmasFailed = 0;
+	u64				gPIDmaBytes = 0;
+}
+
+void PerfStats_NotePIDma( u32 cart_address, u32 dram_address, u32 length, bool succeeded )
+{
+	SPIDma dma = { cart_address, dram_address, length, succeeded };
+	gRecentPIDmas[ gNumPIDmas % kNumRecentPIDmas ] = dma;
+	gNumPIDmas++;
+	gPIDmaBytes += length;
+	if( !succeeded )
+	{
+		if( gNumPIDmasFailed < kNumFailedPIDmas )
+		{
+			gFailedPIDmas[ gNumPIDmasFailed ] = dma;
+		}
+		gNumPIDmasFailed++;
+	}
+}
+
 void PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length )
 {
 	if( reason != FLUSH_INVALIDATE_REQUEST )
@@ -535,6 +564,27 @@ namespace
 			}
 		}
 
+		// Cartridge loads
+		{
+			fprintf( fh, "PI DMA (cart -> RDRAM): %u transfers, %u KB, %u failed. ROM size %u bytes (%s), RDRAM %u bytes\n",
+				(unsigned)gNumPIDmas, (unsigned)( gPIDmaBytes / 1024 ), (unsigned)gNumPIDmasFailed,
+				(unsigned)RomBuffer::GetRomSize(), RomBuffer::IsRomAddressFixed() ? "ROM Buffer" : "File Cache", (unsigned)gRamSize );
+			for( u32 i = 0; i < gNumPIDmasFailed && i < kNumFailedPIDmas; ++i )
+			{
+				const SPIDma & d = gFailedPIDmas[ i ];
+				fprintf( fh, "  FAILED  cart %08x -> ram %08x, %u bytes\n", (unsigned)d.Cart, (unsigned)d.Dram, (unsigned)d.Length );
+			}
+			u32 num_recent = gNumPIDmas < kNumRecentPIDmas ? gNumPIDmas : kNumRecentPIDmas;
+			for( u32 i = 0; i < num_recent; ++i )
+			{
+				const SPIDma & d = gRecentPIDmas[ ( gNumPIDmas - num_recent + i ) % kNumRecentPIDmas ];
+				fprintf( fh, "  recent  cart %08x -> ram %08x, %u bytes%s\n", (unsigned)d.Cart, (unsigned)d.Dram, (unsigned)d.Length, d.Succeeded ? "" : " FAILED" );
+			}
+			gNumPIDmas = 0;
+			gNumPIDmasFailed = 0;
+			gPIDmaBytes = 0;
+		}
+
 		// Traces
 		// Problem traces (aborted or cut short) first, then the busiest
 		std::sort( gTraceStats, gTraceStats + gNumTraceStats, []( const STraceStats & a, const STraceStats & b )
@@ -685,4 +735,139 @@ void PerfStats_Flush()
 		fclose( fh );
 	}
 	gLogLength = 0;
+}
+
+//*****************************************************************************
+// Hang watchdog
+//*****************************************************************************
+#include <pspge.h>
+#include "Core/CPU.h"
+
+volatile u32 gWatchdogFrames = 0;
+
+extern volatile u32 gDLLastCmd0;
+extern volatile u32 gDLLastCmd1;
+extern volatile u32 gDLLastPC;
+extern volatile s32 gDLLastDepth;
+extern char gUcodeDescription[];
+
+namespace
+{
+	const u32		kWatchdogPollMicroseconds = 500 * 1000;
+	const u32		kWatchdogStallPolls = 8;			// Report after ~4 seconds without a new frame
+
+	SceUID			gWatchdogThread = -1;
+	volatile bool	gWatchdogRunning = false;
+
+	const char * CategoryName( u32 category )
+	{
+		static const char * const kNames[] = { "CPU other (events, interrupts, OS HLE)", "CPU interpreter", "CPU compiled code",
+			"CPU compiling", "Graphics (display list)", "Graphics vertex", "Graphics texture", "Graphics draw",
+			"Audio", "Waiting for the PSP GPU (GE)", "Frame limiter" };
+		return category < NUM_PERF_CATEGORIES ? kNames[ category ] : "?";
+	}
+
+	void WriteHangReport( u32 seconds, u32 vi_at_stall, u32 frames )
+	{
+		FILE * fh = fopen( "hang.txt", "a" );
+		if( fh == nullptr )
+		{
+			return;
+		}
+
+		fprintf( fh, "==== %s: no new frame for %u seconds\n", g_ROM.settings.GameName.c_str(), (unsigned)seconds );
+		fprintf( fh, "Frames presented: %u. N64 vertical interrupts: %u at the stall, %u now (%s)\n",
+			(unsigned)frames, (unsigned)vi_at_stall, (unsigned)CPU_GetVerticalInterruptCount(),
+			CPU_GetVerticalInterruptCount() != vi_at_stall ? "N64 emulation is still running" : "N64 emulation is stuck" );
+
+		if( gPerfStatsEnabled )
+		{
+			u32 depth = gDepth;
+			fprintf( fh, "Emulator activity (innermost last):" );
+			if( depth == 0 ) fprintf( fh, " %s", CategoryName( PERF_CPU ) );
+			for( u32 i = 0; i < depth && i < kMaxDepth; ++i )
+			{
+				fprintf( fh, "%s %s", i ? " >" : "", CategoryName( gStack[ i ] ) );
+			}
+			fprintf( fh, "\n" );
+			fprintf( fh, "Last compiled fragment entered (N64): %08x\n", (unsigned)gPerfFragmentEntry );
+		}
+		else
+		{
+			fprintf( fh, "Emulator activity: not tracked (set Display Framerate to FPS + Timing)\n" );
+		}
+
+		fprintf( fh, "N64 PC: %08x\n", (unsigned)gCPUState.CurrentPC );
+		fprintf( fh, "Graphics microcode: %s\n", gUcodeDescription );
+		fprintf( fh, "Last display list command: %08x %08x at %08x (depth %d)\n",
+			(unsigned)gDLLastCmd0, (unsigned)gDLLastCmd1, (unsigned)gDLLastPC, (int)gDLLastDepth );
+		// Peek at the PSP GPU without waiting: 0 = done, 1 = queued, 2 = drawing, 3 = stall reached, <0 = error
+		fprintf( fh, "PSP GE draw state: %d\n\n", sceGeDrawSync( 1 ) );
+		fclose( fh );
+	}
+
+	int WatchdogThread( SceSize, void * )
+	{
+		const u32 frames_at_start = gWatchdogFrames;
+		u32 last_frames = gWatchdogFrames;
+		u32 stalled_polls = 0;
+		u32 vi_at_stall = 0;
+		bool reported = false;
+
+		while( gWatchdogRunning )
+		{
+			sceKernelDelayThread( kWatchdogPollMicroseconds );
+
+			u32 frames = gWatchdogFrames;
+			if( frames != last_frames || !CPU_IsRunning() ||	// Progress, or paused in the menu
+				frames == frames_at_start )						// Still booting: no frame shown yet
+			{
+				last_frames = frames;
+				stalled_polls = 0;
+				reported = false;
+				continue;
+			}
+
+			if( stalled_polls == 0 )
+			{
+				vi_at_stall = CPU_GetVerticalInterruptCount();
+			}
+			stalled_polls++;
+
+			if( stalled_polls >= kWatchdogStallPolls && !reported )
+			{
+				WriteHangReport( stalled_polls * kWatchdogPollMicroseconds / 1000000, vi_at_stall, frames );
+				reported = true;
+			}
+		}
+		return 0;
+	}
+}
+
+void Watchdog_Start()
+{
+	if( gWatchdogThread >= 0 )
+	{
+		return;
+	}
+	gWatchdogRunning = true;
+	// High priority so it still runs while the emulator thread is busy; it sleeps almost all the time
+	gWatchdogThread = sceKernelCreateThread( "Watchdog", WatchdogThread, 0x10, 0x8000, PSP_THREAD_ATTR_USER, nullptr );
+	if( gWatchdogThread >= 0 )
+	{
+		sceKernelStartThread( gWatchdogThread, 0, nullptr );
+	}
+}
+
+void Watchdog_Stop()
+{
+	if( gWatchdogThread < 0 )
+	{
+		return;
+	}
+	gWatchdogRunning = false;
+	SceUInt timeout = 2 * 1000 * 1000;
+	sceKernelWaitThreadEnd( gWatchdogThread, &timeout );
+	sceKernelDeleteThread( gWatchdogThread );
+	gWatchdogThread = -1;
 }

@@ -32,6 +32,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "HLEAudio/HLEAudioState.h"
 #include "Ultra/ultra_sptask.h"
 #include "Utility/Profiler.h"
+#include "Base/Macros.h"
 
 // Audio UCode lists
 // Dummy UCode Handler
@@ -113,7 +114,28 @@ inline void Audio_Ucode_Detect(OSTask *pTask) {
 //*****************************************************************************
 //
 //*****************************************************************************
+u8 *gAudioRDRAM = nullptr;
+
+static void Audio_ProcessList();
+
 void Audio_Ucode() {
+  gAudioRDRAM = (u8 *)g_pMemoryBuffers[MEM_RD_RAM];
+  Audio_ProcessList();
+}
+
+// gAudioRDRAM must already point at the uncached view (see Audio_PrepareForME):
+// the ME must not write globals the main CPU also uses, since its cache is written
+// back as whole lines when it finishes.
+int Audio_Ucode_ME(int) {
+  Audio_ProcessList();
+  return 0;
+}
+
+void Audio_PrepareForME() {
+  gAudioRDRAM = make_uncached_ptr((u8 *)g_pMemoryBuffers[MEM_RD_RAM]);
+}
+
+static void Audio_ProcessList() {
 #ifdef DAEDALUS_PROFILE
   DAEDALUS_PROFILE("HLEMain::Audio_Ucode");
 #endif

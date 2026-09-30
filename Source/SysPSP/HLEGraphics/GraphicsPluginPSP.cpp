@@ -156,6 +156,8 @@ bool CGraphicsPluginImpl::Initialise()
 		return false;
 	}
 
+	Watchdog_Start();
+
 	if (!DLParser_Initialise())
 	{
 		return false;
@@ -193,6 +195,7 @@ void CGraphicsPluginImpl::UpdateScreen()
 
 	if( current_origin != last_origin )
 	{
+		Watchdog_NoteFrame();
 		//printf( "Flip (%08x, %08x)\n", current_origin, last_origin );
 		PerfStats_SetEnabled( gGlobalPreferences.DisplayFramerate );
 		if( gGlobalPreferences.DisplayFramerate )
@@ -290,6 +293,7 @@ void CGraphicsPluginImpl::RomClosed()
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "Finalising PSPGraphics");
 	#endif
+	Watchdog_Stop();
 	PerfStats_Flush();
 	DLParser_Finalise();
 	CTextureCache::Destroy();
