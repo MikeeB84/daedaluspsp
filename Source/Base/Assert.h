@@ -37,17 +37,7 @@ enum EAssertResult
 	AR_BREAK,
 };
 
-#ifdef DAEDALUS_PSP
     #define DAEDALUS_HALT			__asm__ __volatile__ ( "break" )
-#elif DAEDALUS_POSIX
-    #define DAEDALUS_HALT			__builtin_trap()
-#elif DAEDALUS_CTR
-    #define DAEDALUS_HALT			__asm__ __volatile__ ( "bkpt" )
-#elif DAEDALUS_W32
-    #define DAEDALUS_HALT						__debugbreak()
-#else
-#error Unknown Platform DAEDALUS_HALT should be defined in Base/Assert.h
-#endif
 
 EAssertResult  DaedalusAssert( const char * expression, const char * file, unsigned int line, const char * msg, ... );
 

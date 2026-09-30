@@ -22,10 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Types.h"
 #include "Debug/PrintOpCode.h"
 
-//
-//	Exclude this from public release builds to save a little on the elf size
-//
-#ifndef DAEDALUS_SILENT
+// Also used by the dynarec report in release builds (SysPSP/Utility/PerfStats.cpp)
 
 #include <stdio.h>
 #include <cstring>
@@ -577,7 +574,7 @@ void SprintOp_Patch( char * str, u32 address, OpCode op )		{ strcpy(str, "Patch"
 void SprintOp_J( char * str, u32 address, OpCode op )
 {
 	const char * p_name( "?" );
-#ifdef DAEDALUS_ENABLE_OS_HOOKS
+#if defined(DAEDALUS_ENABLE_OS_HOOKS) && !defined(DAEDALUS_SILENT)
 	p_name = Patch_GetJumpAddressName(JumpTarget(op, address));
 #endif
 	snprintf(str, 128,"J         0x%08x        %s", JumpTarget(op, address), p_name );
@@ -585,7 +582,7 @@ void SprintOp_J( char * str, u32 address, OpCode op )
 void SprintOp_JAL( char * str, u32 address, OpCode op )
 {
 	const char * p_name( "?" );
-#ifdef DAEDALUS_ENABLE_OS_HOOKS
+#if defined(DAEDALUS_ENABLE_OS_HOOKS) && !defined(DAEDALUS_SILENT)
 	p_name = Patch_GetJumpAddressName(JumpTarget(op, address));
 #endif
 	snprintf(str, 128,"JAL       0x%08x        %s", JumpTarget(op, address), p_name );
@@ -1153,4 +1150,3 @@ void SprintRSPOpCodeInfo(char *str, u32 address, OpCode op)
 	SprintRSPOp_Instructions[ op.op ]( str, address, op );
 }
 
-#endif // DAEDALUS_SILENT

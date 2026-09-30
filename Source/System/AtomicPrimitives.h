@@ -23,7 +23,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdlib.h>
 #include "Base/Types.h"
 
-#if defined( DAEDALUS_PSP )
 
 extern "C"
 {
@@ -47,69 +46,5 @@ inline u32 AtomicBitSet( volatile u32 * ptr, u32 and_bits, u32 or_bits )
 	return _AtomicBitSet( ptr, and_bits, or_bits );
 }
 
-#elif defined( DAEDALUS_W32 )
-
-#include <intrin.h>
-
-#pragma intrinsic (_InterlockedIncrement)
-#pragma intrinsic (_InterlockedDecrement)
-#pragma intrinsic (_InterlockedIncrement)
-
-
-inline u32 AtomicIncrement( volatile u32 * ptr )
-{
-	return _InterlockedIncrement( reinterpret_cast< volatile long * >( ptr ) );
-}
-
-inline u32 AtomicDecrement( volatile u32 * ptr )
-{
-	return _InterlockedDecrement( reinterpret_cast< volatile long * >( ptr ) );
-}
-
-inline u32 AtomicBitSet( volatile u32 * ptr, u32 and_bits, u32 or_bits )
-{
-	u32 new_value;
-	u32 orig_value;
-	do
-	{
-		orig_value = *ptr;
-		new_value = (orig_value & and_bits) | or_bits;
-	}
-	while ( _InterlockedCompareExchange( reinterpret_cast< volatile long * >( ptr ), new_value, orig_value ) != orig_value );
-
-	return new_value;
-}
-
-// POSIX Atomics, Probably can just set this as default for platforms that don't need custom atomics for now. 
-// This eventually will be replaced with a more modern set.
-#else
-
-// inline u32 AtomicIncrement( volatile u32 * ptr )
-// {
-// 	DAEDALUS_ASSERT(false, "FIXME");
-// 	return *ptr++;
-// }
-
-// inline u32 AtomicDecrement( volatile u32 * ptr )
-// {
-// 	DAEDALUS_ASSERT(false, "FIXME");
-// 	return *ptr--;
-// }
-
-inline u32 AtomicBitSet( volatile u32 * ptr, u32 and_bits, u32 or_bits )
-{
-    u32 new_value;
-    u32 orig_value;
-
-    do {
-        orig_value = __sync_fetch_and_or(ptr, or_bits);  // Atomically OR or_bits into *ptr
-        new_value = (orig_value & and_bits) | or_bits;   // Calculate the new value
-
-    } while (__sync_val_compare_and_swap(ptr, orig_value, new_value) != orig_value);
-
-    return new_value;
-}
-
-#endif
 
 #endif // UTILITY_ATOMICPRIMITIVES_H_

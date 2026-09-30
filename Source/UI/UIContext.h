@@ -106,7 +106,6 @@ class CUIContext
 };
 
 //############################################### Emulate PSP API for now ################################
-#ifdef DAEDALUS_PSP
 	#include <psptypes.h>
 	#include <pspkernel.h>
 	#include <pspctrl.h>
@@ -115,31 +114,6 @@ class CUIContext
 	#include <pspgu.h>
 	#include <psprtc.h>
 	#include <psppower.h>
-#else
-
-#include "Ultra/ultra_os.h"
-
-  #define PSP_CTRL_DOWN   D_JPAD
-  #define PSP_CTRL_UP     U_JPAD
-  #define PSP_CTRL_LEFT   L_JPAD
-  #define PSP_CTRL_RIGHT  R_JPAD
-  #define PSP_CTRL_TRIANGLE A_BUTTON
-  #define PSP_CTRL_CIRCLE   B_BUTTON
-  #define PSP_CTRL_CROSS    U_CBUTTONS
-  #define PSP_CTRL_SQUARE 	L_CBUTTONS
-  #define PSP_CTRL_SELECT   Z_TRIG
-  #define PSP_CTRL_START    START_BUTTON
-  #define PSP_CTRL_LTRIGGER L_TRIG
-  #define PSP_CTRL_RTRIGGER R_TRIG
-
-  
-  struct SceCtrlData {
-    u16 Lx, Ly;
-    u16 Buttons;
-  };
-
-  void sceCtrlPeekBufferPositive(struct SceCtrlData*, int n);
-#endif
 //##########################################################################################################
 
 #endif // UI_UICONTEXT_H_

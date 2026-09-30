@@ -255,10 +255,6 @@ static inline std::shared_ptr<CNativeTexture> Load_ObjSprite( const uObjSprite *
 	{
 		// Get ti info from TextureDescriptor since there's no txtr for tile or block (txtr = NULL)
 		ti = gRDPStateManager.GetUpdatedTextureDescriptor( gRenderer->GetTextureTile() );
-#ifdef DAEDALUS_ACCURATE_TMEM
-		// TLUT is loaded from ObjLoadTxtr ucode, so this is a direct load from ram (line = 0)
-		ti.SetLine(0);
-#endif
 	}
 	else
 	{
@@ -298,7 +294,7 @@ static inline std::shared_ptr<CNativeTexture> Load_ObjSprite( const uObjSprite *
 //
 //*****************************************************************************
 template< ESpriteMode mode > 
-static void Draw_ObjSprite( const uObjSprite *sprite, const std::shared_ptr<CNativeTexture> texture )
+static void Draw_ObjSprite( const uObjSprite *sprite, const std::shared_ptr<CNativeTexture> & texture )
 {
 	f32 imageW = sprite->imageW / 32.0f;
 	f32 imageH = sprite->imageH / 32.0f;

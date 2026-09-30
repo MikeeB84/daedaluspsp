@@ -34,18 +34,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <cstring> 
 
-#ifdef DAEDALUS_PSP
 #include "Graphics/GraphicsContext.h"
-#ifdef INTRAFONT
  #include "intraFont.h"
-#endif
 
 extern bool PSP_IS_SLIM;
-#endif
 
-#ifdef DAEDALUS_CTR
-extern bool isN3DS;
-#endif
 
 namespace
 {
@@ -66,19 +59,10 @@ namespace
 
 	bool		ShouldLoadAsFixed( u32 rom_size [[maybe_unused]] )
 	{
-#if	defined(DAEDALUS_PSP)
 		if (PSP_IS_SLIM && !gGlobalPreferences.LargeROMBuffer)
-			return rom_size <= 32 * 1024 * 1024;
+			return rom_size <= 16 * 1024 * 1024;		// Must fit the 16MB ROM heap (see RomFileMemory.cpp)
 		else
 			return rom_size <= 2 * 1024 * 1024;
-#elif defined(DAEDALUS_CTR)
-		if(isN3DS)
-			return rom_size < 32 * 1024 * 1024;
-		else
-			return rom_size <  8 * 1024 * 1024;
-#else
-		return true;
-#endif
 	}
 
 #ifdef DAEDALUS_COMPRESSED_ROM_SUPPORT
@@ -206,29 +190,23 @@ bool RomBuffer::Open()
 
 	sRomSize = p_rom_file->GetRomSize();
 
+	// Allocate memory for the whole rom - round up to a 4 byte boundry.
+	// If there is not enough memory, fall back to streaming through the file cache
+	// rather than writing through a null pointer.
+	u8 *	p_bytes = nullptr;
 	if( ShouldLoadAsFixed( sRomSize ) )
 	{
-		// Now, allocate memory for rom - round up to a 4 byte boundry
-		u32		size_aligned =  AlignPow2( sRomSize, 4 );
-		u8 *	p_bytes =  (u8*)CROMFileMemory::Get()->Alloc( size_aligned );
+		p_bytes = (u8*)CROMFileMemory::Get()->Alloc( AlignPow2( sRomSize, 4 ) );
+	}
 
-#ifndef DAEDALUS_PSP
-		if( !p_rom_file->LoadData( sRomSize, p_bytes, messages ) )
-		{
-			#ifdef DAEDALUS_DEBUG_CONSOLE
-			DBGConsole_Msg(0, "Failed to load [C%s]\n", filename.c_str());
-			#endif
-			CROMFileMemory::Get()->Free( p_bytes );
-			return false;
-		}
-#else
+	if( p_bytes != nullptr )
+	{
+
 		u32 offset = 0;
 		u32 length_remaining( sRomSize );
 		const u32 TEMP_BUFFER_SIZE = 128 * 1024;
-		#ifdef INTRAFONT
 		intraFont* ltn8  = intraFontLoad( "flash0:/font/ltn8.pgf", INTRAFONT_CACHE_ASCII);
 		intraFontSetStyle( ltn8, 1.5f, 0xFFFFFFFF, 0, 0.f, INTRAFONT_ALIGN_CENTER );
-		#endif
 		while( offset < sRomSize )
 		{
 			u32 length_to_process( std::min( length_remaining, TEMP_BUFFER_SIZE ) );
@@ -243,16 +221,11 @@ bool RomBuffer::Open()
 
 			CGraphicsContext::Get()->BeginFrame();
 			CGraphicsContext::Get()->ClearToBlack();
-			#ifdef INTRAFONT
 			intraFontPrintf( ltn8, 480/2, (272>>1), "Buffering ROM %d%%...", offset * 100 / sRomSize );
-			#endif
 			CGraphicsContext::Get()->EndFrame();
 			CGraphicsContext::Get()->UpdateFrame( false );
 		}
-	#ifdef INTRAFONT
 		 intraFontUnload( ltn8 );
-	#endif
-#endif
 		spRomData = p_bytes;
 		sRomFixed = true;
 

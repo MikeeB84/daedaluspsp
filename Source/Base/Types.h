@@ -44,17 +44,9 @@ union REG64
 	s64		_s64;
 	u64		_u64;
 
-#ifdef DAEDALUS_ENDIAN_BIG
-	struct { f32 _f32_1, _f32_0; };
-	struct { s32 _s32_1, _s32_0; };
-	struct { u32 _u32_1, _u32_0; };
-#elif DAEDALUS_ENDIAN_LITTLE
 	struct { f32 _f32_0, _f32_1; };
 	struct { s32 _s32_0, _s32_1; };
 	struct { u32 _u32_0, _u32_1; };
-#else
-#error No DAEDALUS_ENDIAN_MODE specified
-#endif
 
 };
 
@@ -70,8 +62,5 @@ union REG32
 #define DATA_ALIGN	16
 #define CACHE_ALIGN	64
 
-#ifdef _MSC_VER
-#define strcasecmp _stricmp
-#endif
 
 #endif // UTILITY_DAEDALUSTYPES_H_

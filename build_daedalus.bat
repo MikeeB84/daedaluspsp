@@ -1,4 +1,0 @@
-REM This requires several packages to be installed before it will work
-cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE="C:\Utilities\vcpkg\scripts\buildsystems\vcpkg.cmake" -DCMAKE_INSTALL_PREFIX="." -DX_VCPKG_APPLOCAL_DEPS_INSTALL=1
-ninja -C build/
-ninja -C build install

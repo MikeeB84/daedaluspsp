@@ -51,9 +51,6 @@ public:
 	virtual void SwitchToLcdDisplay() {};
 	virtual void StoreSaveScreenData() {};
 
-#ifdef DAEDALUS_CTR
-	virtual void ResetVertexBuffer() = 0;
-#endif
 	virtual void ClearAllSurfaces() = 0;
 	virtual void ClearToBlack() = 0;
 	virtual void ClearZBuffer() = 0;

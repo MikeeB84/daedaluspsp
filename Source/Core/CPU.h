@@ -184,11 +184,7 @@ void CPU_RegisterVblCallback(VblCallbackFn fn, void * arg);
 void CPU_UnregisterVblCallback(VblCallbackFn fn, void * arg);
 
 // For PSP, we just keep running forever. For other platforms we need to bail when the user quits.
-#ifdef DAEDALUS_PSP
 #define CPU_KeepRunning() (1)
-#else
-#define CPU_KeepRunning() (CPU_IsRunning())
-#endif
 
 inline void CPU_SetPC( u32 pc )		{ gCPUState.CurrentPC = pc; }
 inline void INCREMENT_PC()			{ gCPUState.CurrentPC += 4; }
@@ -251,7 +247,9 @@ extern	void (* g_pCPUCore)();
 //***********************************************
 inline bool CPU_ProcessEventCycles( u32 cycles )
 {
-	LOCK_EVENT_QUEUE();
+	// No lock: this runs once per interpreted instruction, and the event queue is only
+	// touched by the emulation thread. The dynarec exit stubs update the same counter
+	// without locking too (see _DirectExitCheckNoDelay).
 #ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT( gCPUState.NumEvents > 0, "There are no events" );
 	#endif

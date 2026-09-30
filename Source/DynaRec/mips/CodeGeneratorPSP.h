@@ -260,6 +260,10 @@ private:
 				const CN64RegisterCachePSP & GetRegisterCacheFromHandle( RegisterSnapshotHandle snapshot ) const;
 
 				void				FlushRegister( CN64RegisterCachePSP & cache, EN64Reg n64_reg, u32 lo_hi_idx, bool invalidate );
+				void				GenerateHiFromLo( EPspReg psp_dst, const CN64RegisterCachePSP & cache, EN64Reg n64_reg );
+				void				MaterialiseHiSignExtend( CN64RegisterCachePSP & cache, EN64Reg n64_reg );
+				bool				IsSignExtended32( EN64Reg n64_reg ) const;
+				bool				GenerateLogical32( EN64Reg rd, EN64Reg rs, EN64Reg rt, u32 spec_op );
 				void				FlushAllRegisters( CN64RegisterCachePSP & cache, bool invalidate );
 				void				FlushAllFloatingPointRegisters( CN64RegisterCachePSP & cache, bool invalidate );
 				void				FlushAllTemporaryRegisters( CN64RegisterCachePSP & cache, bool invalidate );

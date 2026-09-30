@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Types.h"
 
 #include <vector>
-#include <random>
+#include "Utility/FastRand.h"
 
 #include "Interface/ConfigOptions.h"
 #include "Core/ROM.h"
@@ -29,7 +29,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Debug/Dump.h"
 #include "HLEGraphics/CachedTexture.h"
 #include "HLEGraphics/ConvertImage.h"
-#include "HLEGraphics/ConvertTile.h"
 #include "HLEGraphics/TextureInfo.h"
 #include "Graphics/ColourValue.h"
 #include "Graphics/NativePixelFormat.h"
@@ -54,21 +53,9 @@ static NativePf8888			gPaletteBuffer[ 256 ];
 // On other platforms (e.g. OSX) updating textures is relatively inexpensive, so
 // we just skip the hashing process entirely, and update textures every frame
 // regardless of whether they've actually changed.
-#if defined (DAEDALUS_PSP) || defined(DAEDALUS_CTR)
 static const bool kUpdateTexturesEveryFrame = false;
-#else
-static const bool kUpdateTexturesEveryFrame = true;
-#endif
 
 
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_ACCURATE_TMEM) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-static ETextureFormat SelectNativeFormat(const TextureInfo & ti [[maybe_unused]])
-{
-	// On OSX, always use RGBA 8888 textures.
-	return TexFmt_8888;
-}
-
-#else
 
 #define DEFTEX	TexFmt_8888
 
@@ -105,7 +92,6 @@ static ETextureFormat SelectNativeFormat(const TextureInfo & ti)
 	u32 idx = (ti.GetFormat() << 2) | ti.GetSize();
 	return g_ROM.LOAD_T1_HACK ? TFmt_hack[idx] : TFmt[idx];
 }
-#endif
 
 static bool GenerateTexels(void ** p_texels,
 						   void ** p_palette,
@@ -125,23 +111,6 @@ static bool GenerateTexels(void ** p_texels,
 	void *			texels  = &gTexelBuffer[0];
 	NativePf8888 *	palette = IsTextureFormatPalettised( texture_format ) ? gPaletteBuffer : nullptr;
 
-#ifdef DAEDALUS_ACCURATE_TMEM
-	// NB: if line is 0, it implies this is a direct load from ram (e.g. S2DEX and Sprite2D ucodes)
-	// Some games set ti.Line = 0 on LoadTile, ex SSV and Paper Mario
-	if (ti.GetLine() > 0)
-	{
-		if (ConvertTile(ti, texels, palette, texture_format, pitch))
-		{
-			*p_texels  = texels;
-			*p_palette = palette;
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
-#endif
 
 	if (ConvertTexture(ti, texels, palette, texture_format, pitch))
 	{
@@ -153,7 +122,7 @@ static bool GenerateTexels(void ** p_texels,
 	return false;
 }
 
-static void UpdateTexture( const TextureInfo & ti, std::shared_ptr<CNativeTexture> texture )
+static void UpdateTexture( const TextureInfo & ti, const std::shared_ptr<CNativeTexture> & texture )
 {
 	#ifdef DAEDALUS_PROFILE
 	DAEDALUS_PROFILE( "Texture Conversion" );
@@ -239,7 +208,6 @@ bool CachedTexture::Initialise()
 	#endif
 	u32 width  = mTextureInfo.GetWidth();
 	u32 height = mTextureInfo.GetHeight();
-	std::default_random_engine FastRand;
 
 	if (mTextureInfo.GetEmulateMirrorS()) width  *= 2;
 	if (mTextureInfo.GetEmulateMirrorT()) height *= 2;
@@ -314,7 +282,6 @@ bool CachedTexture::IsFresh() const
 
 bool CachedTexture::HasExpired() const
 {
-	std::default_random_engine FastRand;
 	if (!kUpdateTexturesEveryFrame)
 	{
 		if (!IsFresh())

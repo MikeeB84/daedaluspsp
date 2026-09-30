@@ -390,10 +390,8 @@ void IRomSelectorComponent::RenderRomList()
 	s32 x = LIST_TEXT_LEFT;
 	s32 y = LIST_TEXT_TOP + mCurrentScrollOffset + mpContext->GetFontHeight();
 
-#ifdef DAEDALUS_PSP
 	sceGuEnable(GU_SCISSOR_TEST);
 	sceGuScissor(LIST_TEXT_LEFT, BELOW_MENU_MIN, LIST_TEXT_LEFT+LIST_TEXT_WIDTH, BELOW_MENU_MIN+LIST_TEXT_HEIGHT);
-#endif
 
 	const char * const	ptr_text = "> " ;
 
@@ -415,13 +413,8 @@ void IRomSelectorComponent::RenderRomList()
 		//
 		// If y + line height is greater than or equal to BELOW_MENU MIN and y - line_height is greater than BELOW_MENU_MIN + lIST_TEXT HEIGHT
 		// Probably needs to go out of this time. 
-		#ifdef PSP
 		if(static_cast<s32>(y+line_height) >= static_cast<s32>(LIST_TEXT_TOP) 
 			&& static_cast<s32>(y-line_height) < static_cast<s32>(LIST_TEXT_TOP + LIST_TEXT_HEIGHT))
-		#else
-		if(static_cast<s32>(y+line_height) >= static_cast<s32>(LIST_TEXT_TOP + 100) 
-			&& static_cast<s32>(y-line_height) < static_cast<s32>(LIST_TEXT_TOP + LIST_TEXT_HEIGHT))
-		#endif
 		{
 			c32		colour;
 
@@ -439,10 +432,8 @@ void IRomSelectorComponent::RenderRomList()
 		y += line_height;
 	}
 
-#ifdef DAEDALUS_PSP
 	// Restore scissoring
 	sceGuScissor(0,0, 480,272);
-#endif
 }
 
 void IRomSelectorComponent::RenderCategoryList()

@@ -25,9 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "ColourPulser.h"
 #include <cmath>
 
-#ifdef DAEDALUS_PSP
 #include "SysPSP/Math/Math.h"
-#endif
 
 CColourPulser::CColourPulser( c32 dim_colour, c32 bright_colour, u32 cycle_period )
 :	mTimeCounter( 0 )

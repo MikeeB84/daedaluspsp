@@ -72,13 +72,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <filesystem>
 
-#ifdef DAEDALUS_SDL
-#include <SDL2/SDL.h>
-#else
 
 PSP_MODULE_INFO( DaedalusX64 1.1.9a, 0, 1, 1 );
 PSP_MAIN_THREAD_ATTR( PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU );
-#endif
 
 
 extern "C"
@@ -111,13 +107,6 @@ static bool	Initialize()
 	sceCtrlSetSamplingCycle(0);
     sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 
-	#ifdef DAEDALUS_SDL
-		if( SDL_Init( SDL_INIT_AUDIO ) < 0 )
-	{
-		printf( "SDL could not initialize! SDL Error: %s\n", SDL_GetError() );
-		return false;
-	}
-	#endif
 
 	// Detect PSP greater than PSP 1000
 	if ( kuKernelGetModel() > 0 )
@@ -136,11 +125,10 @@ static bool	Initialize()
 			CModule::Unload( HAVE_DVE );	// Stop and unload dvemgr.prx since if no video cable is connected
 	}
 
-// This Breaks gdb, better disable it in debug build
-#ifdef DAEDALUS_DEBUG_CONSOLE
+	// Show a crash screen (and write exception.txt) instead of freezing or quitting to the XMB.
+	// NB: this breaks gdb.
 extern void initExceptionHandler();
 	initExceptionHandler();
-#endif
 
 	HAVE_DVE = (HAVE_DVE < 0) ? 0 : 1; // 0 == no dvemgr, 1 == dvemgr
 

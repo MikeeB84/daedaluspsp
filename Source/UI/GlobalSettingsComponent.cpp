@@ -253,7 +253,7 @@ namespace
 		virtual const char *	GetSettingName() const
 		{
 			if ( gGlobalPreferences.DisplayFramerate )
-				return "FS + VB + SYNC";
+				return "FPS + Timing";
 			else
 				return "None";
 		}
@@ -294,10 +294,9 @@ IGlobalSettingsComponent::IGlobalSettingsComponent( CUIContext * p_context )
 :	CGlobalSettingsComponent( p_context )
 {
 
-	mElements.Add(std::make_unique<CInfoSetting>( "Display Info", "Whether to show additional info while the rom is running. Some modes are only available in DEBUG mode") );
+	mElements.Add(std::make_unique<CInfoSetting>( "Display Framerate", "Show the framerate, plus where frame time goes (CPU, graphics, audio, GE wait, idle), while the rom is running.") );
 	mElements.Add(std::make_unique<CViewPortSetting>( "Viewport Size", "The size of the viewport on the PSP." ) );
 
-#if DAEDALUS_PSP
 	if (HAVE_DVE && PSP_TV_CABLE > 0)
 	{
 		mElements.Add(std::make_unique<CBoolSetting>( &gGlobalPreferences.TVEnable, "TV Output", "Whether to direct the video to the TV out.", "Yes", "No" ) );
@@ -308,15 +307,12 @@ IGlobalSettingsComponent::IGlobalSettingsComponent( CUIContext * p_context )
 	{
 		gGlobalPreferences.TVEnable = false;
 	}
-#endif
 	mElements.Add(std::make_unique<CBoolSetting>( &gGlobalPreferences.ForceLinearFilter,"Force Linear Filter", "Enable to force linear filter, this can improve the look of textures", "Yes", "No" ) );
 	mElements.Add(std::make_unique<CBoolSetting>( &gGlobalPreferences.RumblePak,"Controller add-on", "Enable either MemPak or RumblePak.", "RumblePak", "MemPak" ) );
 	// mElements.Add(std::make_unique<CAdjustDeadzoneSetting>( mpContext, "Stick Deadzone", "Adjust the size of the deadzone applied to the PSP stick while playing. Press Start/X to edit." ) );
 
-#if DAEDALUS_PSP
 	if (PSP_IS_SLIM) 
 		mElements.Add(std::make_unique<CBoolSetting>( &gGlobalPreferences.LargeROMBuffer, "ROM Buffering Mode", "File Cache, faster ROM boot but can stutter due to MS reads. ROM Buffer, no stutter but long boot time loading whole ROM into memory. Takes effect only @ ROM boot.", "File Cache", "ROM Buffer" ) );
-#endif
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
 	mElements.Add(std::make_unique<CBoolSetting>( &gGlobalPreferences.HighlightInexactBlendModes, "Highlight Inexact Blend Modes",	"Replace inexact blend modes with a placeholder texture.", "Yes", "No" ) );

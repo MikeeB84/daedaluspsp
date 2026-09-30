@@ -27,21 +27,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Interface/Preferences.h"
 #include <array>
 
-#ifdef DAEDALUS_PSP
 #include <pspgu.h>
-#elif defined(DAEDALUS_CTR)
-#include <GL/picaGL.h>
-#elif defined(DAEDALUS_GLES)
-#include "SysGLES/GL.h"
-#else
-#include "SysGL/GL.h"
-#endif
 
-#ifdef DAEDALUS_CTR
-#define HD_SCALE 0.8f
-#else
 #define HD_SCALE 0.754166f
-#endif
 
 class CNativeTexture;
 struct TempVerts;
@@ -242,11 +230,7 @@ public:
 
 	// Various rendering states
 	// Don't think we need to updateshademodel, it breaks tiger's honey hunt
-#ifdef DAEDALUS_PSP
 	inline void			SetTnLMode(u32 mode)					{ mTnL.Flags.Modes = mode; /*UpdateFogEnable(); UpdateShadeModel();*/ }
-#else
-	inline void			SetTnLMode(u32 mode)					{ mTnL.Flags.Modes = mode; UpdateFogEnable(); /*UpdateShadeModel();*/ }
-#endif
 	// Texture stuff
 	inline void			SetTextureEnable(bool enable)			{ mTnL.Flags.Texture = enable; }
 	inline void			SetTextureTile(u32 tile)				{ mTextureTile = tile; }
@@ -257,29 +241,16 @@ public:
 	}
 	inline u32			GetTextureTile() const					{ return mTextureTile; }
 
-#ifdef DAEDALUS_CTR
-	inline void			SetCullMode(bool enable, bool mode)		{ enable ? glEnable(GL_CULL_FACE) : glDisable(GL_CULL_FACE); mode ? glCullFace(GL_BACK) : glCullFace(GL_FRONT); }
-#else
 	inline void			SetCullMode(bool enable, bool mode)		{ mTnL.Flags.TriCull = enable; mTnL.Flags.CullBack = mode; }
-#endif
 
 	// Fog stuff
 	inline void			SetFogMultOffs(f32 Mult, f32 Offs)		{ mTnL.FogMult=Mult/255.0f; mTnL.FogOffs=Offs/255.0f;}
-#ifdef DAEDALUS_PSP
 	inline void			SetFogMinMax(f32 fog_near, f32 fog_far)	{ mfog_near = fog_near; mfog_far = fog_far;}
 	inline void			SetFogColour( c32 colour )				{ mFogColour = colour; }
-#elif defined(DAEDALUS_VITA) || defined (DAEDALUS_CTR) || defined (DAEDALUS_GL) || defined (DAEDALUS_GLES)
-	inline void			SetFogMinMax(f32 fog_near, f32 fog_far)	{ glFogf(GL_FOG_START, fog_near); glFogf(GL_FOG_END, fog_far); }
-	inline void			SetFogColour( c32 colour )				{ float fog_clr[4] = {colour.GetRf(), colour.GetGf(), colour.GetBf(), colour.GetAf()}; glFogfv(GL_FOG_COLOR, &fog_clr[0]); }
-#endif
 
 
 	// PrimDepth will replace the z value if depth_source=1 (z range 32767-0 while PSP depthbuffer range 0-65535)//Corn
-#ifdef DAEDALUS_PSP
 	inline void			SetPrimitiveDepth( u32 z )				{ mPrimDepth = (f32)( ( ( 32767 - z ) << 1) + 1 ); }
-#else
-	inline void			SetPrimitiveDepth( u32 z )				{ mPrimDepth = (f32)(z - 0x4000) / (f32)0x4000;}
-#endif
 	inline void			SetPrimitiveLODFraction( f32 f )		{ mPrimLODFraction = f; }
 	inline void			SetPrimitiveColour( c32 colour )		{ mPrimitiveColour = colour; }
 	inline void			SetEnvColour( c32 colour )				{ mEnvColour = colour; }
@@ -303,8 +274,8 @@ public:
 	virtual void		FillRect( const glm::vec2 & xy0, const glm::vec2 & xy1, u32 color ) = 0;
 
 	// Texture stuff
-	virtual void		Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, const std::shared_ptr<CNativeTexture> texture) = 0;
-	virtual void		Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1, f32 x2, f32 y2, f32 x3, f32 y3, f32 s, f32 t, const std::shared_ptr <CNativeTexture> texture) = 0;
+	virtual void		Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, const std::shared_ptr<CNativeTexture> & texture) = 0;
+	virtual void		Draw2DTextureR(f32 x0, f32 y0, f32 x1, f32 y1, f32 x2, f32 y2, f32 x3, f32 y3, f32 s, f32 t, const std::shared_ptr<CNativeTexture> & texture) = 0;
 
 	// Viewport stuff
 	void				SetN64Viewport( const glm::vec2 & scale, const glm::vec2 & trans );
@@ -366,24 +337,14 @@ public:
 
 	virtual void 		ResetDebugState()						{}
 #endif
-#ifdef DAEDALUS_CTR
-	inline float		N64ToScreenX(float x) const				{ return x * mN64ToScreenScale.x; }
-	inline float		N64ToScreenY(float y) const				{ return y * mN64ToScreenScale.y; }
-#else
 	inline float		N64ToScreenX(float x) const				{ return x * mN64ToScreenScale.x + mN64ToScreenTranslate.x; }
 	inline float		N64ToScreenY(float y) const				{ return y * mN64ToScreenScale.y + mN64ToScreenTranslate.y; }
-#endif
 
 	std::shared_ptr<CNativeTexture> LoadTextureDirectly( const TextureInfo & ti );
 
 protected:
-#ifdef DAEDALUS_PSP
 	inline void			UpdateFogEnable()						{ if(gFogEnabled) mTnL.Flags.Fog ? sceGuEnable(GU_FOG) : sceGuDisable(GU_FOG); }
 	inline void			UpdateShadeModel()						{ sceGuShadeModel( mTnL.Flags.Shade ? GU_SMOOTH : GU_FLAT ); }
-#else
-	inline void			UpdateFogEnable()						{ if(gFogEnabled) mTnL.Flags.Fog ? glEnable(GL_FOG) : glDisable(GL_FOG); }
-	inline void			UpdateShadeModel()						{ glShadeModel( mTnL.Flags.Shade ? GL_SMOOTH : GL_FLAT ); }
-#endif
 	void				UpdateTileSnapshots( u32 tile_idx );
 	void				UpdateTileSnapshot( u32 index, u32 tile_idx );
 
@@ -494,9 +455,6 @@ protected:
 	float				mScreenWidth;
 	float				mScreenHeight;
 
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-	glm::mat4			mScreenToDevice;					// Used by OSX renderer - scales screen coords (0..640 etc) to device coords (-1..+1)
-#endif
 
 	static const u32 	kMaxIndices = 320;					// We need at least 80 verts * 3 = 240? But Flying Dragon uses more than 256 //Corn
 	// std::array<u16, kMaxIndices> mIndexBuffer;

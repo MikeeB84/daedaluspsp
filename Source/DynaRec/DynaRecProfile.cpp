@@ -41,7 +41,6 @@ namespace DynarecProfile
 static std::map<u32,u32>		gFrameLookups;
 static u32						gLastFrame;
 
-extern std::map< u32, u32 >		gHotTraceCountMap;
 
 
 namespace

@@ -39,6 +39,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Debug/PrintOpCode.h"
 #include "Utility/Profiler.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 static const bool	gGraphicsEnabled = true;
 static const bool	gAudioEnabled	 = true;
@@ -134,6 +135,7 @@ void RSP_HLE_Finished(u32 setbits)
 static EProcessResult RSP_HLE_Graphics()
 {
 	DAEDALUS_PROFILE( "HLE: Graphics" );
+	DAEDALUS_PERF_SCOPE( PERF_GFX );
 
 	if (gGraphicsEnabled && gGraphicsPlugin != nullptr)
 	{
@@ -163,6 +165,7 @@ static EProcessResult RSP_HLE_Graphics()
 static EProcessResult RSP_HLE_Audio()
 {
 	DAEDALUS_PROFILE( "HLE: Audio" );
+	DAEDALUS_PERF_SCOPE( PERF_AUDIO );
 
 	if (gAudioEnabled && gAudioPlugin != nullptr)
 	{

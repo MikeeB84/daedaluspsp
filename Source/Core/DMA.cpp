@@ -40,9 +40,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // 1 - Ignores IMEM for speed, its not needed for HLE RSP
 // 2 - Forces a linear transfer which assumes a count of 0 and skip of 0
 // 3 - Uses non swizle memcpy since alignment and size constrains are met 
-#ifdef DAEDALUS_PSP
 #define FAST_DMA_SP
-#endif
 
 bool gDMAUsed = false;
 //*****************************************************************************

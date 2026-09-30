@@ -40,21 +40,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <glm/ext.hpp>
 
 #include <vector>
-#include <random>
+#include "Utility/FastRand.h"
 
-#ifdef DAEDALUS_PSP
 #include "SysPSP/Math/Math.h"
-#endif 
+#include "SysPSP/Utility/PerfStats.h"
 
-#ifdef DAEDALUS_CTR
-struct ScePspFMatrix4
-{
-	float m[16];
-};
-
-extern void sceGuSetMatrix(int type, const ScePspFMatrix4 * mtx);
-#define GU_PROJECTION GL_PROJECTION
-#endif
 // Vertex allocation.
 // AllocVerts/FreeVerts:
 //   Allocate vertices whose lifetime must extend beyond the current scope.
@@ -70,20 +60,12 @@ struct TempVerts
 
 	~TempVerts()
 	{
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-		free(Verts);
-#endif
 	}
 
 	DaedalusVtx * Alloc(u32 count)
 	{
 		u32 bytes = count * sizeof(DaedalusVtx);
-#ifdef DAEDALUS_PSP
 		Verts = static_cast<DaedalusVtx*>(sceGuGetMemory(bytes));
-#endif
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-		Verts = static_cast<DaedalusVtx*>(malloc(bytes));
-#endif
 
 		Count = count;
 		return Verts;
@@ -304,7 +286,6 @@ void BaseRenderer::InitViewport()
 	// Init the N64 viewport.
 	mVpScale = glm::vec2( 640.f*0.25f, 480.f*0.25f );
 	mVpTrans = glm::vec2( 640.f*0.25f, 480.f*0.25f );
-		std::default_random_engine FastRand;
 	// Get the current display dimensions. This might change frame by frame e.g. if the window is resized.
 	u32 display_width  = 0;
 	u32 display_height = 0;
@@ -315,16 +296,12 @@ void BaseRenderer::InitViewport()
 	mScreenWidth  = (f32)display_width;
 	mScreenHeight = (f32)display_height;
 
-#ifdef DAEDALUS_PSP
 	// Centralise the viewport in the display.
 	u32 frame_width  = gGlobalPreferences.TVEnable ? 720 : 480;
 	u32 frame_height = gGlobalPreferences.TVEnable ? 480 : 272;
 
 	s32 display_x = (s32)(frame_width  - display_width)  / 2;
 	s32 display_y = (s32)(frame_height - display_height) / 2;
-#else
-	s32 display_x = 0, display_y = 0;
-#endif
 
 	mN64ToScreenScale.x = gZoomX * mScreenWidth  / fViWidth;
 	mN64ToScreenScale.y = gZoomX * mScreenHeight / fViHeight;
@@ -332,27 +309,14 @@ void BaseRenderer::InitViewport()
 	mN64ToScreenTranslate.x  = (f32)display_x - roundf(0.55f * (gZoomX - 1.0f) * fViWidth);
 	mN64ToScreenTranslate.y  = (f32)display_y - roundf(0.55f * (gZoomX - 1.0f) * fViHeight);
 
-#ifndef DAEDALUS_CTR
 		if (gRumblePakActive)
 		{
 			mN64ToScreenTranslate.x += (FastRand() & 3);
 			mN64ToScreenTranslate.y += (FastRand() & 3);
 		}
-#endif
 
 
 
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-	f32 w = mScreenWidth;
-	f32 h = mScreenHeight;
-
-	mScreenToDevice = glm::mat4(
-		2.f / w,       0.f,     0.f,     0.f,
-		    0.f,  -2.f / h,     0.f,     0.f,
-		    0.f,       0.f,     1.f,     0.f,
-		  -1.0f,       1.f,     0.f,     1.f
-	);
-#endif
 
 	UpdateViewport();
 }
@@ -397,20 +361,11 @@ void BaseRenderer::UpdateViewport()
 
 	//DBGConsole_Msg(0, "[WViewport Changed (%d) (%d)]",vp_w,vp_h );
 
-#if defined(DAEDALUS_PSP)
 	const u32 vx = 2048;
 	const u32 vy = 2048;
 
 	sceGuOffset(vx - (vp_w/2),vy - (vp_h/2));
 	sceGuViewport(vx + vp_x, vy + vp_y, vp_w, vp_h);
-#elif defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-	glViewport(vp_x, (s32)mScreenHeight - (vp_h + vp_y), vp_w, vp_h);
-#ifdef DAEDALUS_ENABLE_ASSERTS
-#else
-
-	DAEDALUS_ERROR("Code to set viewport not implemented on this platform");
-#endif
-#endif
 }
 
 //*****************************************************************************
@@ -735,6 +690,7 @@ namespace
 //*****************************************************************************
 void BaseRenderer::PrepareTrisClipped( TempVerts * temp_verts ) const
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	#ifdef DAEDALUS_ENABLE_PROFILING
 	DAEDALUS_PROFILE( "BaseRenderer::PrepareTrisClipped" );
 #endif
@@ -866,6 +822,7 @@ void BaseRenderer::PrepareTrisClipped( TempVerts * temp_verts ) const
 //*****************************************************************************
 void BaseRenderer::PrepareTrisUnclipped( TempVerts * temp_verts ) const
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_PROFILE( "BaseRenderer::PrepareTrisUnclipped" );
 	DAEDALUS_ASSERT( mNumIndices > 0, "The number of indices should have been checked" );
@@ -971,6 +928,7 @@ glm::vec3 BaseRenderer::LightPointVert( const glm::vec4 & w ) const
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	UpdateWorldProject();
 	alignas(DATA_ALIGN)  const glm::mat4 & mat_world_project = mWorldProject;
 	alignas(DATA_ALIGN) const glm::mat4 & mat_world = mModelViewStack[mModelViewTop];
@@ -1083,7 +1041,6 @@ void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 			mVtxProjected[i].Texture.y = (float)vert.tv * mTnL.TextureScaleY;
 		}
 
-#ifdef DAEDALUS_PSP
 		//Fog
 		if ( mTnL.Flags.Fog )
 		{
@@ -1099,7 +1056,6 @@ void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 				mVtxProjected[i].Colour.w = 0.0f;
 			}
 		}
-#endif // DAEDALUS_PSP
 	}
 #endif // DAEDALUS_PSP_USE_VFPU
 }
@@ -1109,6 +1065,7 @@ void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfoConker(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	alignas(DATA_ALIGN)    const glm::mat4 & mat_project = mProjectionMat;
 	alignas(DATA_ALIGN)	const glm::mat4 & mat_world = mModelViewStack[mModelViewTop];
 
@@ -1248,6 +1205,7 @@ void BaseRenderer::SetNewVertexInfoConker(u32 address, u32 v0, u32 n)
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfoDKR(u32 address, u32 v0, u32 n, bool billboard)
 {	
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	alignas(DATA_ALIGN) const glm::mat4 & mat_world_project = mModelViewStack[mDKRMatIdx];
 
 	DL_PF( "    Ambient color RGB[%f][%f][%f] Texture scale X[%f] Texture scale Y[%f]", mTnL.Lights[mTnL.NumLights].Colour.x, mTnL.Lights[mTnL.NumLights].Colour.y, mTnL.Lights[mTnL.NumLights].Colour.z, mTnL.TextureScaleX, mTnL.TextureScaleY);
@@ -1358,6 +1316,7 @@ void BaseRenderer::SetNewVertexInfoDKR(u32 address, u32 v0, u32 n, bool billboar
 //*****************************************************************************
 void BaseRenderer::SetNewVertexInfoPD(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	alignas(DATA_ALIGN) const glm::mat4 & mat_world = mModelViewStack[mModelViewTop];
 	alignas(DATA_ALIGN) const glm::mat4 & mat_project = mProjectionMat;
 
@@ -1553,47 +1512,18 @@ void BaseRenderer::ResetMatrices(u32 size)
 //*****************************************************************************
 void BaseRenderer::UpdateTileSnapshots( u32 tile_idx )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_TEX );
 	UpdateTileSnapshot( 0, tile_idx );
 
-#if defined(DAEDALUS_PSP)
 	if ( g_ROM.LOAD_T1_HACK & !gRDPOtherMode.text_lod )
 	{
 		// LOD is disabled - use two textures
 		UpdateTileSnapshot( 1, tile_idx + 1 );
 	}
-#elif defined(DAEDALUS_GL) || defined(RDP_USE_TEXEL1) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
-// FIXME(strmnnrmn): What's RDP_USE_TEXEL1? Can we remove it?
-
-	if (gRDPOtherMode.cycle_type == CYCLE_2CYCLE)
-	{
-		u32 t1_tile = (tile_idx + 1) & 7;
-
-		// NB: I don't think we need to do this. lod_frac is set to 0.0 in the
-		// OSX pixel shader, so it'll always use Texel 0 when mipmapping.
-		// LOD is enabled - use the highest detail texture in texel1
-		// if ( gRDPOtherMode.text_lod )
-		// 	t1_tile = tile_idx;
-
-		if ( !gRDPStateManager.IsTileInitialised(t1_tile) )
-		{
-			// FIXME(strmnnrmn): This happens a lot - not just for Tony Hawk.
-			// DAEDALUS_DL_ERROR("Using T1, but it's not been set up");
-
-			// FIXME(strmnnrmn): This is required so that Tony Hawk's text renders correctly.
-			// It's odd. It calls TexRect with tile 1, and has
-			// a color combiner that uses Texel 1 but not Texel 0.
-			// But tile 2 has never been initialised.
-			t1_tile = tile_idx;
-		}
-
-		UpdateTileSnapshot( 1, t1_tile );
-	}
-#endif
 }
 
-#ifdef DAEDALUS_PSP
-static void T1Hack(const TextureInfo & ti0, std::shared_ptr<CNativeTexture> texture0,
-				   const TextureInfo & ti1, std::shared_ptr<CNativeTexture> texture1)
+static void T1Hack(const TextureInfo & ti0, const std::shared_ptr<CNativeTexture> & texture0,
+				   const TextureInfo & ti1, const std::shared_ptr<CNativeTexture> & texture1)
 {
 	if((ti0.GetFormat() == G_IM_FMT_RGBA) &&
 	   (ti1.GetFormat() == G_IM_FMT_I) &&
@@ -1632,7 +1562,6 @@ static void T1Hack(const TextureInfo & ti0, std::shared_ptr<CNativeTexture> text
 		}
 	}
 }
-#endif // DAEDALUS_PSP
 
 //*****************************************************************************
 // This captures the state of the RDP tiles in:
@@ -1676,27 +1605,20 @@ void BaseRenderer::UpdateTileSnapshot( u32 index, u32 tile_idx )
 				mBoundTextureInfo[index] = ti;
 				mBoundTexture[index]     = texture;
 
-#ifdef DAEDALUS_PSP
 				//If second texture is loaded try to merge two textures RGB(T0) + A(T1) into one RGBA(T1) //Corn
 				//If T1 Hack is not enabled index can never be other than 0
 				if(index)
 				{
 					T1Hack(mBoundTextureInfo[0], mBoundTexture[0], mBoundTextureInfo[1], mBoundTexture[1]);
 				}
-#endif
 			}
 		}
 	}
 
 	// Initialise the clamping state. When the mask is 0, it forces clamp mode.
 	//
-#ifdef DAEDALUS_PSP
 	u32 mode_u = (u32)((rdp_tile.clamp_s || (rdp_tile.mask_s == 0)) ? GU_CLAMP : GU_REPEAT);
 	u32 mode_v = (u32)((rdp_tile.clamp_t || (rdp_tile.mask_t == 0)) ? GU_CLAMP : GU_REPEAT);
-#else
-	u32 mode_u = (u32)((rdp_tile.clamp_s || (rdp_tile.mask_s == 0)) ? GL_CLAMP : GL_REPEAT);
-	u32 mode_v = (u32)((rdp_tile.clamp_t || (rdp_tile.mask_t == 0)) ? GL_CLAMP : GL_REPEAT);
-#endif
 	//	In CRDPStateManager::GetTextureDescriptor, we limit the maximum dimension of a
 	//	texture to that define by the mask_s/mask_t value.
 	//	It this happens, the tile size can be larger than the truncated width/height
@@ -1713,19 +1635,11 @@ void BaseRenderer::UpdateTileSnapshot( u32 index, u32 tile_idx )
 		// ToDo : Find a proper workaround for this, if this disabled the castle in Link's stage in SSB is broken :/
 		// Do a hack just for Zelda for now..
 		//
-#ifdef DAEDALUS_PSP
 		mode_u = g_ROM.ZELDA_HACK ? GU_CLAMP : GU_REPEAT;
-#else
-		mode_u = g_ROM.ZELDA_HACK ? GL_CLAMP : (rdp_tile.mirror_s ? GL_MIRRORED_REPEAT : GL_REPEAT);
-#endif
 	}
 
 	if( tile_size.GetHeight() > ti.GetHeight() )
-#ifdef DAEDALUS_PSP
 		mode_v = GU_REPEAT;
-#else
-		mode_v = rdp_tile.mirror_t ? GL_MIRRORED_REPEAT : GL_REPEAT;
-#endif
 	mTexWrap[ index ].u = mode_u;
 	mTexWrap[ index ].v = mode_v;
 
@@ -1768,11 +1682,7 @@ inline void FixUV(u32 * wrap, s16 * c0_, s16 * c1_, s16 offset, u32 size)
 	s16 c1 = *c1_ - offset_10_5;
 
 	// Many texrects already have GU_CLAMP set, so avoid some work.
-#ifdef DAEDALUS_PSP
 	if (*wrap != GU_CLAMP && size > 0)
-#else
-	if (*wrap != GL_CLAMP && size > 0)
-#endif
 	{
 		// Check if the coord is negative - if so, offset to the range [0,size]
 		if (c0 < 0)
@@ -1792,11 +1702,7 @@ inline void FixUV(u32 * wrap, s16 * c0_, s16 * c1_, s16 offset, u32 size)
 		if ((u16)c0 <= size &&
 			(u16)c1 <= size)
 		{
-#ifdef DAEDALUS_PSP
 			*wrap = GU_CLAMP;
-#else
-			*wrap = GL_CLAMP;
-#endif
 		}
 	}
 
@@ -1817,13 +1723,6 @@ void BaseRenderer::PrepareTexRectUVs(TexCoord * puv0, TexCoord * puv1)
 	if (rdp_tile.mirror_s)	size_x *= 2;
 	if (rdp_tile.mirror_t)	size_y *= 2;
 
-#if defined(DAEDALUS_GLES) || defined(DAEDALUS_GL)
-	// If using shift, we need to take it into account here.
-	offset.s = ApplyShift(offset.s, rdp_tile.shift_s);
-	offset.t = ApplyShift(offset.t, rdp_tile.shift_t);
-	size_x   = ApplyShift(size_x,   rdp_tile.shift_s);
-	size_y   = ApplyShift(size_y,   rdp_tile.shift_t);
-#endif
 
 	FixUV(&mTexWrap[0].u, &puv0->s, &puv1->s, offset.s, size_x);
 	FixUV(&mTexWrap[0].v, &puv0->t, &puv1->t, offset.t, size_y);
@@ -1837,6 +1736,7 @@ void BaseRenderer::PrepareTexRectUVs(TexCoord * puv0, TexCoord * puv1)
 //*****************************************************************************
 std::shared_ptr<CNativeTexture> BaseRenderer::LoadTextureDirectly( const TextureInfo & ti )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_TEX );
 	std::shared_ptr<CNativeTexture> texture = CTextureCache::Get()->GetOrCreateTexture( ti );
 	if (texture)
 	{
@@ -1879,19 +1779,7 @@ void BaseRenderer::SetScissor( u32 x0, u32 y0, u32 x1, u32 y1 )
 
 	s32 y = static_cast<s32>(mScreenHeight) - (t + h);
 
-#if defined(DAEDALUS_PSP)
 	sceGuScissor(l, y, w, h);
-#elif defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES) 
-	// NB: OpenGL is x,y,w,h. Errors if width or height is negative, so clamp this.
-
-	glScissor( l, y, w, h );
-
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-#else
-
-    DAEDALUS_ERROR("Need to implement scissor for this platform.");
-#endif
-#endif
 }
 
 extern void MatrixFromN64FixedPoint( glm::mat4 & mat, u32 address );

@@ -27,7 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Debug/DBGConsole.h"
 #include "Ultra/ultra_gbi.h"
 
-#include <random>
+#include "Utility/FastRand.h"
 #include <unordered_map>
 #include <cstring> 
 
@@ -156,7 +156,6 @@ static const std::unordered_map<u32, MicrocodeData> gMicrocodeDataMap = {
 UcodeInfo GBIMicrocode_SetCache(u32 index, u32 code_base, u32 data_base, 
 	const MicroCodeInstruction * ucode_function, const char ** name )
 {
-		std::default_random_engine FastRand;
 	//
 	// If the max of ucode entries is reached, spread it randomly
 	// Otherwise we'll keep overriding the last entry

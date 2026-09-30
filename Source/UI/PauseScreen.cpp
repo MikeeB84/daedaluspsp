@@ -232,7 +232,6 @@ void	IPauseScreen::Render()
 	// Meh should be big enough regarding if translated..
 	char					info[120] = "";
 
-#if DAEDALUS_PSP
 	s32 bat = scePowerGetBatteryLifePercent();
 	s32 batteryLifeTime = scePowerGetBatteryLifeTime();
 
@@ -254,7 +253,6 @@ void	IPauseScreen::Render()
 			snprintf(info, sizeof(info), "[%s]" ,
 			Translate_String("Battery is Charging"));
 	}
-#endif
 
 	// Battery Info
 	mpContext->SetFontStyle( CUIContext::FS_REGULAR );
@@ -280,9 +278,7 @@ void	IPauseScreen::Run()
 	mIsFinished = false;
 	CUIScreen::Run();
 
-#ifdef DAEDALUS_PSP
 	CGraphicsContext::Get()->SwitchToChosenDisplay();
-#endif
 	CGraphicsContext::Get()->ClearAllSurfaces();
 }
 

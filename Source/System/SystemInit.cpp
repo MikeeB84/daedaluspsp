@@ -30,17 +30,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Interface/RomDB.h"
 #include "System/SystemInit.h"
-#ifdef DAEDALUS_PSP
 #include "SysPSP/Graphics/VideoMemoryManager.h"
-#endif
 
 #include "Graphics/GraphicsContext.h"
 
-#if defined(DAEDALUS_POSIX) || defined(DAEDALUS_W32)
-#include "SysPosix/Debug/WebDebug.h"
-#include "SysPosix/HLEGraphics/TextureCacheWebDebug.h"
-#include "HLEGraphics/DisplayListDebugger.h"
-#endif
 
 
 #include "Utility/FramerateLimiter.h"
@@ -155,26 +148,15 @@ static const std::array<SysEntityEntry, 17> gSysInitTable =
 	{"ROM Database",		CRomDB::Create,				CRomDB::Destroy},
 	{"ROM Settings",		CRomSettingsDB::Create,		CRomSettingsDB::Destroy},
 	{"InputManager",		CInputManager::Create,		CInputManager::Destroy},
-	#ifndef DAEDALUS_CTR
 	{"Language",			Translate_Init,				NULL},
-	#endif
-#ifdef DAEDALUS_PSP
 	{"VideoMemory",			CVideoMemoryManager::Create, NULL},
 
-#endif
 	{"GraphicsContext",		CGraphicsContext::Create,	CGraphicsContext::Destroy},
 	{"Preference",			CPreferences::Create,		CPreferences::Destroy},
 	{"Memory",				Memory_Init,				Memory_Fini},
 	{"Controller",			CController::Create,		CController::Destroy},
 	{"RomBuffer",			RomBuffer::Create,			RomBuffer::Destroy},
 
-#if defined(DAEDALUS_POSIX) || defined(DAEDALUS_W32)
-#ifdef DAEDALUS_DEBUG_DISPLAYLIST
-	{"WebDebug",			WebDebug_Init, 				WebDebug_Fini},
-	{"TextureCacheWebDebug",TextureCache_RegisterWebDebug, 	NULL},
-	{"DLDebuggerWebDebug",	DLDebugger_RegisterWebDebug, 	NULL},
-#endif
-#endif
 }};
 
 struct RomEntityEntry

@@ -18,11 +18,6 @@ add_library(Core OBJECT
                         TLB.cpp
                         )
 
-# Cannot compile with -O2 or above on Apple Intel
-if(APPLE)
-set_source_files_properties(R4300.cpp PROPERTIES COMPILE_FLAGS -O0)
-endif(APPLE)
-
 if(DAEDALUS_PROFILE_CORE)
 target_compile_options(Core PRIVATE -pg)
 endif(DAEDALUS_PROFILE_CORE)

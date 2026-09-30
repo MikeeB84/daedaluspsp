@@ -63,13 +63,8 @@ void OutputLanguage(std::ofstream& fh, const std::string& name, int index) {
 }
 
 // Audio is disabled on the PSP by default, but enabled on other platforms.
-#ifdef DAEDALUS_PSP
 static const EAudioPluginMode      kDefaultAudioPluginMode      = APM_DISABLED;
 static const ETextureHashFrequency kDefaultTextureHashFrequency = THF_DISABLED;
-#else
-static const EAudioPluginMode      kDefaultAudioPluginMode = APM_ENABLED_SYNC;
-static const ETextureHashFrequency kDefaultTextureHashFrequency = THF_EVERY_FRAME;
-#endif
 
 static u32						GetTexureHashFrequencyAsFrames( ETextureHashFrequency thf );
 static ETextureHashFrequency	GetTextureHashFrequencyFromFrames( u32 frames );

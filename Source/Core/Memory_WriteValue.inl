@@ -198,7 +198,6 @@ static void WriteValue_8430_843F( u32 address, u32 value )
 }
 
 // 0x0440 0000 to 0x044F FFFF Video Interface (VI) Registers
-#ifdef DAEDALUS_PSP	// This is out of spec but only writes to VI_CURRENT_REG do something.. /Salvy
 static void WriteValue_8440_844F( u32 address, u32 value )
 {
 	u32 offset = address & 0xFF;
@@ -211,73 +210,6 @@ static void WriteValue_8440_844F( u32 address, u32 value )
 
 	*(u32 *)((u8 *)g_pMemoryBuffers[MEM_VI_REG] + offset) = value;
 }
-#else
-extern void RenderFrameBuffer(u32);
-extern u32 gRDPFrame;
-static void WriteValue_8440_844F( u32 address, u32 value )
-{
-	u32 offset = address & 0xFF;
-
-	switch (offset)
-	{
-	case 0x0:	// VI_CONTROL_REG
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-		DPF( DEBUG_VI, "VI_CONTROL_REG set to 0x%08x", value );
-		#endif
-#ifdef DAEDALUS_LOG
-		DisplayVIControlInfo(value);
-#endif
-		if (gGraphicsPlugin != NULL)
-		{
-			gGraphicsPlugin->ViStatusChanged();
-		}
-		break;
-
-	case 0x4:	// VI_ORIGIN_REG
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-		DPF( DEBUG_VI, "VI_ORIGIN_REG set to %d", value );
-#endif
-		 // NB: if no display lists executed, interpret framebuffer
-		if( gRDPFrame == 0 )
-		{
-			RenderFrameBuffer(value & 0x7FFFFF);
-		}
-		else
-		{
-			// Builtin video plugin already calls UpdateScreen in DLParser_Process
-#ifndef DAEDALUS_GL 
-			gGraphicsPlugin->UpdateScreen();
-#endif
-#ifndef DAEDALUS_GLES
-			gGraphicsPlugin->UpdateScreen();
-#endif
-		}
-		break;
-
-	case 0x8:	// VI_WIDTH_REG
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-		DPF( DEBUG_VI, "VI_WIDTH_REG set to %d pixels", value );
-		#endif
-		if (gGraphicsPlugin != NULL)
-		{
-			gGraphicsPlugin->ViWidthChanged();
-		}
-		break;
-
-	case 0x10:	// VI_CURRENT_REG
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-		DPF( DEBUG_VI, "VI_CURRENT_REG set to 0x%08x", value );
-		// Any write clears interrupt line...
-		DPF( DEBUG_VI, "VI: Clearing interrupt flag. PC: 0x%08x", gCPUState.CurrentPC );
-		#endif
-		Memory_MI_ClrRegisterBits(MI_INTR_REG, MI_INTR_VI);
-		R4300_Interrupt_UpdateCause3();
-		return;
-	}
-
-	*(u32 *)((u8 *)g_pMemoryBuffers[MEM_VI_REG] + offset) = value;
-}
-#endif
 
 // 0x0450 0000 to 0x045F FFFF Audio Interface (AI) Registers
 static void WriteValue_8450_845F( u32 address, u32 value )

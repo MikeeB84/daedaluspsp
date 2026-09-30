@@ -18,6 +18,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include <algorithm>
+#include <array>
+#include <vector>
 #include <fstream>
 
 #include "Base/Types.h"
@@ -45,6 +47,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Base/Macros.h"
 #include "Utility/Profiler.h"
 #include "Debug/Synchroniser.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 #ifdef DAEDALUS_ENABLE_DYNAREC
 
@@ -54,22 +57,174 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //
 // Banjo Tooie needs a larger cache size
 // BUT leave PSP cache size untouched for now
-#ifdef DAEDALUS_PSP
 #define TRACE_SIZE 512
-#else
-#define TRACE_SIZE 1024
-#endif
 
 static const u32					gMaxFragmentCacheSize = (8192 + 1024); //Maximum amount of fragments in the cache
 static const u32					gMaxHotTraceMapSize = (2048 + TRACE_SIZE);
 static const u32					gHotTraceThreshold = 10;	//How many times interpreter has to loop a trace before it becomes hot and sent to dynarec
+static const u32					gHotTraceRetryInterval = 16;	//If recording a hot trace was aborted (e.g. by an interrupt), try again after this many more hits
 
 
-//std::map< u32, u32, std::less<u32>, MyAllocator >				gHotTraceCountMap;
-//std::map< u32, u32, std::less<u32>, boost::pool_allocator<std::pair< const u32, u32 > > >				gHotTraceCountMap;
-std::map< u32, u32 >				gHotTraceCountMap {};
+//*****************************************************************************
+// Counts how often the interpreter reaches each branch target. This is hit on
+// every interpreted branch without a fragment, so it uses a fixed open
+// addressing table instead of std::map (no allocation, no tree walk).
+// Behaviour matches the map it replaces: Increment/Erase/Clear/Size.
+//*****************************************************************************
+class CHotTraceCounter
+{
+public:
+	CHotTraceCounter()						{ Clear(); }
+
+	u32		Size() const					{ return mLive; }
+
+	// Current count for an address without changing it (0 if not present)
+	u32		Get( u32 address ) const
+	{
+		u32 idx = Hash( address );
+		for (;;)
+		{
+			const Slot & slot = mSlots[ idx ];
+			if( slot.Address == address ) return slot.Count;
+			if( slot.Address == kEmpty ) return 0;
+			idx = (idx + 1) & (kNumSlots - 1);
+		}
+	}
+
+	void	Clear()
+	{
+		mSlots.fill( Slot{ kEmpty, 0 } );
+		mLive = 0;
+		mUsed = 0;
+	}
+
+	// Equivalent to ++map[address]
+	u32		Increment( u32 address )
+	{
+		u32 idx = Hash( address );
+		s32 tombstone = -1;
+		for (;;)
+		{
+			Slot & slot = mSlots[ idx ];
+			if( slot.Address == address )
+			{
+				return ++slot.Count;
+			}
+			if( slot.Address == kEmpty )
+			{
+				break;
+			}
+			if( slot.Address == kTombstone && tombstone < 0 )
+			{
+				tombstone = (s32)idx;
+			}
+			idx = (idx + 1) & (kNumSlots - 1);
+		}
+
+		if( tombstone >= 0 )
+		{
+			idx = (u32)tombstone;
+		}
+		else
+		{
+			++mUsed;
+		}
+		mSlots[ idx ] = Slot{ address, 1 };
+		++mLive;
+
+		if( mUsed > kMaxUsed )
+		{
+			Rehash();
+		}
+		return 1;
+	}
+
+	void	Erase( u32 address )
+	{
+		u32 idx = Hash( address );
+		for (;;)
+		{
+			Slot & slot = mSlots[ idx ];
+			if( slot.Address == address )
+			{
+				slot.Address = kTombstone;
+				slot.Count = 0;
+				--mLive;
+				return;
+			}
+			if( slot.Address == kEmpty )
+			{
+				return;
+			}
+			idx = (idx + 1) & (kNumSlots - 1);
+		}
+	}
+
+	template< typename Fn > void ForEach( Fn fn ) const
+	{
+		for( const Slot & slot : mSlots )
+		{
+			if( slot.Address != kEmpty && slot.Address != kTombstone )
+			{
+				fn( slot.Address, slot.Count );
+			}
+		}
+	}
+
+private:
+	struct Slot
+	{
+		u32		Address;
+		u32		Count;
+	};
+
+	// PCs are always 4 byte aligned, so these can never be real addresses
+	static const u32 kEmpty			= 0xFFFFFFFF;
+	static const u32 kTombstone		= 0xFFFFFFFE;
+	static const u32 kNumSlotBits	= 13;
+	static const u32 kNumSlots		= 1 << kNumSlotBits;	// 3x gMaxHotTraceMapSize keeps probes short
+	static const u32 kMaxUsed		= kNumSlots * 3 / 4;	// Live entries + tombstones before rehashing
+
+	static u32 Hash( u32 address )
+	{
+		return ((address >> 2) * 2654435761u) >> (32 - kNumSlotBits);
+	}
+
+	// Remove tombstones left behind by Erase()
+	void	Rehash()
+	{
+		std::vector< Slot > live;
+		live.reserve( mLive );
+		ForEach( [&live]( u32 address, u32 count ) { live.push_back( Slot{ address, count } ); } );
+
+		Clear();
+		for( const Slot & entry : live )
+		{
+			u32 idx = Hash( entry.Address );
+			while( mSlots[ idx ].Address != kEmpty )
+			{
+				idx = (idx + 1) & (kNumSlots - 1);
+			}
+			mSlots[ idx ] = entry;
+			++mLive;
+			++mUsed;
+		}
+	}
+
+	std::array< Slot, kNumSlots >	mSlots;
+	u32								mLive;
+	u32								mUsed;
+};
+
+static CHotTraceCounter				gHotTraceCountMap;
 CFragmentCache						gFragmentCache {};
 static bool							gResetFragmentCache {false};
+
+// Set when compiled code hands back to the interpreter with a branch delay slot
+// still to run (the branch went the other way from when it was recorded). The
+// branch target is then counted as a trace start even if it is a forward branch,
+// otherwise code reached this way is never compiled.
+static bool							gCountNextBranchTarget {false};
 
 #ifdef DAEDALUS_DEBUG_DYNAREC
 std::map< u32, u32 >				gAbortedTraceReasons;
@@ -94,6 +249,7 @@ u32 gFragmentLookupSuccess {};
 //*****************************************************************************
 void  CPU_InvalidateICache()
 {
+	PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, 0, 0xFFFFFFFF );
 	CPU_ResetFragmentCache();
 }
 
@@ -113,6 +269,7 @@ void  CPU_InvalidateICacheRange( u32 address, u32 length )
 {
 	if( gFragmentCache.ShouldInvalidateOnWrite( address, length ) )
 	{
+		PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, address, length );
 #ifndef DAEDALUS_SILENT
 		printf( "Write to %08x (%d bytes) overlaps fragment cache entries\n", address, length );
 #endif
@@ -197,7 +354,8 @@ template< bool TraceEnabled > inline void CPU_EXECUTE_OP()
 		break;
 	case EXEC_DELAY:
 		{
-			bool	backwards( gCPUState.TargetPC <= gCPUState.CurrentPC );
+			bool	backwards( gCPUState.TargetPC <= gCPUState.CurrentPC || gCountNextBranchTarget );
+			gCountNextBranchTarget = false;
 
 			// We've just executed the delayed instr. Now carry out jump as stored in gCPUState.TargetPC;
 			CPU_SetPC(gCPUState.TargetPC);
@@ -237,11 +395,26 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 		// Keep executing ops as long as there's nothing to do
 		//
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
-		while(stuff_to_do == 0)
-		{
-			CPU_EXECUTE_OP< TraceEnabled >();
 
+		// Execution resumes here after interrupts, exceptions and other events, often at a
+		// new address such as the exception vector. Treat that like a branch target so it
+		// runs compiled code if there is some, and gets counted (and compiled) if not.
+		// Otherwise interrupt handlers always start in the interpreter.
+		if( DynaRec && stuff_to_do == 0 && gCPUState.Delay == NO_DELAY )
+		{
+			CPU_HandleDynaRecOnBranch( true, TraceEnabled );
 			stuff_to_do = gCPUState.GetStuffToDo();
+		}
+
+		{
+			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
+			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
+			while(stuff_to_do == 0)
+			{
+				CPU_EXECUTE_OP< TraceEnabled >();
+
+				stuff_to_do = gCPUState.GetStuffToDo();
+			}
 		}
 
 		if( TraceEnabled && (stuff_to_do != CPU_CHANGE_CORE) )
@@ -255,16 +428,42 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 				gAbortedTraceReasons[ start_address ] = stuff_to_do;
 #endif
 
+				// Disabled by default: salvaging made Star Fox crash on real hardware at boot.
+				// An interrupt arrived (or was raised by the last instruction) while recording.
+				// Keep what was recorded up to here: the fragment exits at the current PC, and
+				// compiled code already leaves a fragment when an instruction raises an interrupt.
+				// Throwing the trace away instead can leave hot code in the interpreter for good,
+				// e.g. a loop whose body always raises an interrupt.
+				// Exceptions (TLB misses, syscalls...) still abort, as the PC has been redirected.
+				const u32 trace_start = gTraceRecorder.GetStartTraceAddress();
+				const u32 trace_length = gTraceRecorder.GetTraceLength();
+
 #ifdef ALLOW_TRACES_WHICH_EXCEPT
-				if(stuff_to_do == CPU_CHECK_INTERRUPTS && gCPUState.Delay == NO_DELAY )		// Note checking for exactly equal, not just that it's set
+				if( (stuff_to_do & ~CPU_CHANGE_CORE) == CPU_CHECK_INTERRUPTS &&
+					gCPUState.Delay == NO_DELAY &&
+					gTraceRecorder.CanStopTrace() )
+#else
+				if( false )
+#endif
 				{
-					//DBGConsole_Msg( 0, "Adding chunk at %08x after interrupt\n", gTraceRecorder.GetStartTraceAddress() );
+					PerfStats_Count( PERF_COUNT_TRACE_SALVAGED );
+					PerfStats_TraceEvent( TRACE_EVENT_SALVAGED, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
 					gTraceRecorder.StopTrace( gCPUState.CurrentPC );
 					CPU_CreateAndAddFragment();
 				}
-#endif
-
-				gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an interrupt etc
+				else
+				{
+					PerfStats_Count( PERF_COUNT_TRACE_ABORT );
+					PerfStats_TraceEvent( TRACE_EVENT_ABORT, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
+					if( gPerfStatsEnabled )
+					{
+						u32 addresses[ 48 ];
+						u32 count = trace_length < 48 ? trace_length : 48;
+						for( u32 i = 0; i < count; ++i ) addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
+						PerfStats_CaptureAbortedTrace( trace_start, addresses, count );
+					}
+					gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an exception etc
+				}
 			}
 			CPU_SelectCore();
 		}
@@ -318,12 +517,9 @@ void	CPU_DumpFragmentCache()
 	{
 		std::vector< SAddressHitCount >	hit_counts;
 
-		hit_counts.reserve( gHotTraceCountMap.size() );
+		hit_counts.reserve( gHotTraceCountMap.Size() );
 
-		for(std::map<u32,u32>::const_iterator it = gHotTraceCountMap.begin(); it != gHotTraceCountMap.end(); ++it )
-		{
-			hit_counts.push_back( SAddressHitCount( it->first, it->second ) );
-		}
+		gHotTraceCountMap.ForEach( [&hit_counts]( u32 address, u32 count ) { hit_counts.push_back( SAddressHitCount( address, count ) ); } );
 
 		std::sort( hit_counts.begin(), hit_counts.end(), SortByHitCount );
 
@@ -367,12 +563,29 @@ void	CPU_DumpFragmentCache()
 //*****************************************************************************
 void CPU_CreateAndAddFragment()
 {
+	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );
+
+	// Keep the trace's instruction addresses for the profiler (CreateFragment clears the trace)
+	static u32 trace_addresses[ 1600 ];		// MAX_TRACE_LENGTH is 1500
+	u32 trace_count = 0;
+	if( gPerfStatsEnabled )
+	{
+		trace_count = std::min< u32 >( gTraceRecorder.GetTraceLength(), 1600 );
+		for( u32 i = 0; i < trace_count; ++i ) trace_addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
+	}
+
 	// std::shared_ptr<CFragment> p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 	CFragment * p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 
 	if( p_fragment != nullptr )
 	{
-		gHotTraceCountMap.erase( p_fragment->GetEntryAddress() );
+		if( trace_count > 0 )
+		{
+			PerfStats_NoteFragment( p_fragment->GetEntryAddress(), trace_addresses, trace_count, p_fragment->GetOutputLength() );
+		}
+		PerfStats_Count( PERF_COUNT_FRAGMENT );
+		PerfStats_TraceEvent( TRACE_EVENT_COMPILED, p_fragment->GetEntryAddress(), p_fragment->GetEntryAddress(), 0, 0 );
+		gHotTraceCountMap.Erase( p_fragment->GetEntryAddress() );
 		gFragmentCache.InsertFragment( p_fragment );
 
 		//DBGConsole_Msg( 0, "Inserted hot trace at [R%08x]! (size is %d. %dKB)", p_fragment->GetEntryAddress(), gFragmentCache.GetCacheSize(), gFragmentCache.GetMemoryUsage() / 1024 );
@@ -461,7 +674,16 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 				change_core = true;
 			}
 
-			p_fragment->Execute();
+			{
+				DAEDALUS_PERF_SCOPE( PERF_CPU_DYNAREC );
+				p_fragment->Execute();
+			}
+			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
+
+			if( gCPUState.Delay == EXEC_DELAY )
+			{
+				gCountNextBranchTarget = true;
+			}
 
 			DYNAREC_PROFILE_ENTEREXIT( entry_address, gCPUState.CurrentPC, gCPUState.CPUControl[C0_COUNT]._u32 - entry_count );
 
@@ -487,8 +709,9 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						if(true)
 #endif
 						{
+							PerfStats_NoteFlush( FLUSH_INVALIDATE_DONE, 0, 0 );
 							gFragmentCache.Clear();
-							gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
+							gHotTraceCountMap.Clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 							Patch_PatchAll();
 #endif
@@ -504,29 +727,38 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 
 					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize)
 					{
+						PerfStats_NoteFlush( FLUSH_CACHE_FULL, 0, 0 );
 						gFragmentCache.Clear();
-						gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
+						gHotTraceCountMap.Clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 						Patch_PatchAll();
 #endif
 					}
 
 					// If there is no fragment for this target, start tracing
-					u32 trace_count( ++gHotTraceCountMap[ gCPUState.CurrentPC ] );
-					if( gHotTraceCountMap.size() >= gMaxHotTraceMapSize )
+					u32 trace_count( gHotTraceCountMap.Increment( gCPUState.CurrentPC ) );
+					if( gHotTraceCountMap.Size() >= gMaxHotTraceMapSize )
 					{
 						#ifdef DAEDALUS_DEBUG_CONSOLE
-						DBGConsole_Msg( 0, "Hot trace cache hit %d, dumping", gHotTraceCountMap.size() );
+						DBGConsole_Msg( 0, "Hot trace cache hit %d, dumping", gHotTraceCountMap.Size() );
 						#endif
-						gHotTraceCountMap.clear();
+						PerfStats_NoteFlush( FLUSH_HOT_MAP_FULL, 0, 0 );
+						gHotTraceCountMap.Clear();
 						gFragmentCache.Clear();
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 						Patch_PatchAll();
 #endif
 					}
-					else if( trace_count == gHotTraceThreshold )
+					// A trace is aborted if an interrupt or exception arrives while it is
+					// being recorded. Retry periodically rather than only on the exact
+					// threshold hit, otherwise one unlucky abort leaves that code in the
+					// interpreter until the next cache flush.
+					else if( trace_count >= gHotTraceThreshold &&
+							 ((trace_count - gHotTraceThreshold) % gHotTraceRetryInterval) == 0 )
 					{
-						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.size() );
+						PerfStats_Count( PERF_COUNT_TRACE_START );
+						PerfStats_TraceEvent( TRACE_EVENT_START, gCPUState.CurrentPC, gCPUState.CurrentPC, 0, 0 );
+						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.Size() );
 						gTraceRecorder.StartTrace( gCPUState.CurrentPC );
 
 						if(!trace_already_enabled)
@@ -541,8 +773,8 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						if(gAbortedTraceReasons.find( gCPUState.CurrentPC ) != gAbortedTraceReasons.end() )
 						{
 							u32 reason [[maybe_unused]] = gAbortedTraceReasons[ gCPUState.CurrentPC ];
-							//DBGConsole_Msg( 0, "Hot trace at [R%08x] has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.size( ) );
-							DAED_LOG( DEBUG_DYNAREC_CACHE, "Hot trace at %08x has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.size( ) );
+							//DBGConsole_Msg( 0, "Hot trace at [R%08x] has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.Size() );
+							DAED_LOG( DEBUG_DYNAREC_CACHE, "Hot trace at %08x has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.Size() );
 						}
 						else
 						{
@@ -568,9 +800,16 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 	}
 }
 
+// Used by the dynarec.txt report
+void Dynamo_DescribePc( u32 pc, u32 * hot_count, bool * has_fragment )
+{
+	*hot_count = gHotTraceCountMap.Get( pc );
+	*has_fragment = gFragmentCache.LookupFragmentQ( pc ) != nullptr;
+}
+
 void Dynamo_Reset()
 {
-	gHotTraceCountMap.clear();
+	gHotTraceCountMap.Clear();
 	gFragmentCache.Clear();
 	gResetFragmentCache = false;
 	gTraceRecorder.AbortTrace();
@@ -596,6 +835,7 @@ void Dynamo_SelectCore()
 #else
 
 void CPU_ResetFragmentCache() {}
+void Dynamo_DescribePc( u32, u32 * hot_count, bool * has_fragment ) { *hot_count = 0; *has_fragment = false; }
 void Dynamo_Reset() {}
 void  CPU_InvalidateICacheRange( u32 address [[maybe_unused]], u32 length [[maybe_unused]] ) {}
 

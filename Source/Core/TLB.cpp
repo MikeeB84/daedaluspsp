@@ -28,6 +28,43 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // ALIGNED_GLOBAL(TLBEntry, g_TLBs[32], CACHE_ALIGN);
 alignas(CACHE_ALIGN) std::array<TLBEntry, 32> g_TLBs;
 
+//*****************************************************************************
+// Small direct mapped cache of recent translations, per 4KB virtual page.
+// Games that run from TLB mapped memory (GoldenEye, Perfect Dark, Conker...)
+// translate on every mapped access, and the full lookup walks up to 32 entries.
+//
+// Within a 4KB page the translation is linear (the smallest N64 page size is
+// 4KB and the odd/even split bit is 4KB or higher), so one entry covers a page.
+// Only successful translations are stored. The cache is cleared whenever any
+// TLB entry changes, and each entry records the ASID it was made with.
+//*****************************************************************************
+namespace
+{
+	const u32 kTLBCacheBits		= 8;
+	const u32 kTLBCacheSize		= 1 << kTLBCacheBits;
+	const u32 kTLBCacheInvalid	= 0xFFFFFFFF;	// Virtual page numbers are at most 20 bits
+
+	struct STLBCacheEntry
+	{
+		u32		VirtualPage;
+		u32		Asid;
+		u32		PhysicalBase;
+	};
+
+	STLBCacheEntry gTLBCache[ kTLBCacheSize ];
+
+	void InvalidateTLBCache()
+	{
+		for( u32 i = 0; i < kTLBCacheSize; ++i )
+		{
+			gTLBCache[ i ].VirtualPage = kTLBCacheInvalid;
+		}
+	}
+
+	// Start empty (a zeroed entry would otherwise match page 0 with ASID 0)
+	const bool gTLBCacheInitialised = ( InvalidateTLBCache(), true );
+}
+
 void TLBEntry::UpdateValue(u32 _pagemask, u32 _hi, u32 _pfno, u32 _pfne)
 {
 	// From the R4300i Instruction manual:
@@ -36,6 +73,8 @@ void TLBEntry::UpdateValue(u32 _pagemask, u32 _hi, u32 _pfno, u32 _pfne)
 
 	// TLB[INDEX] <- PageMask || (EntryHi AND NOT PageMask) || EntryLo1 || EntryLo0
 	DPF( DEBUG_TLB, "PAGEMASK: 0x%08x ENTRYHI: 0x%08x. ENTRYLO1: 0x%08x. ENTRYLO0: 0x%08x", _pagemask, _hi, _pfno, _pfne);
+
+	InvalidateTLBCache();
 
 	pagemask = _pagemask;
 	hi = _hi;
@@ -156,23 +195,49 @@ inline bool	TLBEntry::FindTLBEntry( u32 address, u32 * p_idx )
 //*****************************************************************************
 u32 TLBEntry::Translate(u32 address, bool& missing)
 {
+	const u32 virtual_page = address >> 12;
+	const u32 asid = gCPUState.CPUControl[C0_ENTRYHI]._u32 & TLBHI_PIDMASK;
+	STLBCacheEntry & cached = gTLBCache[ virtual_page & (kTLBCacheSize - 1) ];
+
+	if( cached.VirtualPage == virtual_page && cached.Asid == asid )
+	{
+		missing = false;
+		return cached.PhysicalBase + (address & 0xFFF);
+	}
+
 	u32 iMatched = 0;
 
 	missing = !FindTLBEntry( address, &iMatched );
 	if (!missing)
 	{
 		const TLBEntry & tlb = g_TLBs[iMatched];
+		u32 physical = 0;
+		bool valid = false;
 
 		// Check for odd/even entry
 		if (address & tlb.checkbit)
 		{
 			if( (tlb.pfno & TLBLO_V) != 0 )
-				return  tlb.pfnohi | (address & tlb.mask2);
+			{
+				physical = tlb.pfnohi | (address & tlb.mask2);
+				valid = true;
+			}
 		}
 		else
 		{
 			if( (tlb.pfne & TLBLO_V) != 0 )
-				return tlb.pfnehi | (address & tlb.mask2);
+			{
+				physical = tlb.pfnehi | (address & tlb.mask2);
+				valid = true;
+			}
+		}
+
+		if( valid )
+		{
+			cached.VirtualPage = virtual_page;
+			cached.Asid = asid;
+			cached.PhysicalBase = physical - (address & 0xFFF);
+			return physical;
 		}
 
 		// Throw TLB Invalid exception

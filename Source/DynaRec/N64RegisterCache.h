@@ -45,6 +45,8 @@ public:
 					mRegisterCacheInfo[i][lo_hi_idx].Valid = false;
 					mRegisterCacheInfo[i][lo_hi_idx].Dirty = false;
 					mRegisterCacheInfo[i][lo_hi_idx].Known = false;
+					mRegisterCacheInfo[i][lo_hi_idx].SignExtended = false;
+					mRegisterCacheInfo[i][lo_hi_idx].HiIsSignOfLo = false;
 				}
 			}
 
@@ -149,6 +151,31 @@ public:
 			return mRegisterCacheInfo[ reg ][ lo_hi_idx ].KnownValue;
 		}
 
+		// The high word in memory is out of date and should be the sign extension of the
+		// low word. Writing it is put off until it is needed, since most 32 bit results
+		// are overwritten before their high word is ever read.
+		inline bool	IsHiSignExtendPending( EN64Reg reg ) const
+		{
+			return mRegisterCacheInfo[ reg ][ 1 ].SignExtended;
+		}
+
+		inline void	SetHiSignExtendPending( EN64Reg reg, bool pending )
+		{
+			mRegisterCacheInfo[ reg ][ 1 ].SignExtended = pending;
+		}
+
+		// The high word (wherever it is kept) is the sign extension of the low word,
+		// i.e. the register holds a plain 32 bit value
+		inline bool	IsHiSignOfLo( EN64Reg reg ) const
+		{
+			return mRegisterCacheInfo[ reg ][ 1 ].HiIsSignOfLo;
+		}
+
+		inline void	SetHiSignOfLo( EN64Reg reg, bool sign_of_lo )
+		{
+			mRegisterCacheInfo[ reg ][ 1 ].HiIsSignOfLo = sign_of_lo;
+		}
+
 		inline bool	IsFPValid( EN64FloatReg reg ) const
 		{
 			return mFPRegisterCacheInfo[ reg ].Valid;
@@ -200,7 +227,8 @@ public:
 			bool			Valid;				// Is the contents of the register valid?
 			bool			Dirty;				// Is the contents of the register modified?
 			bool			Known;				// Is the contents of the known?
-			//bool			SignExtended;		// Is this (high) register just sign extension of low reg?
+			bool			SignExtended;		// High word only: memory copy is stale, it is the sign extension of the low word
+			bool			HiIsSignOfLo;		// High word only: the value is the sign extension of the low word
 		};
 
 		// PSP fp registers are stored in a 1:1 mapping with the n64 counterparts
