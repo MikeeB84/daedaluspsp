@@ -423,6 +423,7 @@ void	CCodeGeneratorPSP::ExpireOldIntervals( u32 instruction_idx )
 
 		// This interval is no longer active - flush the register and return it to the list of available regs
 		EPspReg		psp_reg( mRegisterCache.GetCachedReg( span.Register, 0 ) );
+		MaterialiseHiSignExtend( mRegisterCache, span.Register );	// While the low word is still in its register
 
 		FlushRegister( mRegisterCache, span.Register, 0, true );
 
@@ -448,6 +449,7 @@ void	CCodeGeneratorPSP::SpillAtInterval( const SRegisterSpan & live_span )
 	{
 		// Uncache the old span
 		EPspReg		psp_reg( mRegisterCache.GetCachedReg( last_span.Register, 0 ) );
+		MaterialiseHiSignExtend( mRegisterCache, last_span.Register );	// While the low word is still in its register
 		FlushRegister( mRegisterCache, last_span.Register, 0, true );
 		mRegisterCache.ClearCachedReg( last_span.Register, 0 );
 
@@ -566,7 +568,18 @@ EPspReg	CCodeGeneratorPSP::GetRegisterNoLoad( EN64Reg n64_reg, u32 lo_hi_idx, EP
 
 void	CCodeGeneratorPSP::GetRegisterValue( EPspReg psp_reg, EN64Reg n64_reg, u32 lo_hi_idx )
 {
-	if( mRegisterCache.IsKnownValue( n64_reg, lo_hi_idx ) )
+	if( lo_hi_idx == 1 && mRegisterCache.IsHiSignExtendPending( n64_reg ) )
+	{
+		GenerateHiFromLo( psp_reg, mRegisterCache, n64_reg );
+		if( mRegisterCache.IsCached( n64_reg, 1 ) && mRegisterCache.GetCachedReg( n64_reg, 1 ) == psp_reg )
+		{
+			// The cached copy is now correct, and will be written back from there
+			mRegisterCache.MarkAsValid( n64_reg, 1, true );
+			mRegisterCache.MarkAsDirty( n64_reg, 1, true );
+			mRegisterCache.SetHiSignExtendPending( n64_reg, false );
+		}
+	}
+	else if( mRegisterCache.IsKnownValue( n64_reg, lo_hi_idx ) )
 	{
 		//printf( "Loading %s[%d] <- %08x\n", RegNames[ n64_reg ], lo_hi_idx, mRegisterCache.GetKnownValue( n64_reg, lo_hi_idx ) );
 		LoadConstant( psp_reg, mRegisterCache.GetKnownValue( n64_reg, lo_hi_idx )._s32 );
@@ -684,6 +697,11 @@ void	CCodeGeneratorPSP::PrepareCachedRegister( EN64Reg n64_reg, u32 lo_hi_idx )
 void CCodeGeneratorPSP::StoreRegister( EN64Reg n64_reg, u32 lo_hi_idx, EPspReg psp_reg )
 {
 	mRegisterCache.ClearKnownValue( n64_reg, lo_hi_idx );
+	mRegisterCache.SetHiSignOfLo( n64_reg, false );		// UpdateRegister sets it again when appropriate
+	if( lo_hi_idx == 1 )
+	{
+		mRegisterCache.SetHiSignExtendPending( n64_reg, false );
+	}
 
 	if( mRegisterCache.IsCached( n64_reg, lo_hi_idx ) )
 	{
@@ -733,6 +751,11 @@ inline void CCodeGeneratorPSP::SetRegister32s( EN64Reg n64_reg, s32 value )
 
 inline void CCodeGeneratorPSP::SetRegister( EN64Reg n64_reg, u32 lo_hi_idx, u32 value )
 {
+	if( lo_hi_idx == 1 )
+	{
+		mRegisterCache.SetHiSignExtendPending( n64_reg, false );
+	}
+	mRegisterCache.SetHiSignOfLo( n64_reg, false );		// Known values are checked directly (IsSignExtended32)
 	mRegisterCache.SetKnownValue( n64_reg, lo_hi_idx, value );
 	mRegisterCache.MarkAsDirty( n64_reg, lo_hi_idx, true );
 	if( mRegisterCache.IsCached( n64_reg, lo_hi_idx ) )
@@ -755,13 +778,28 @@ void CCodeGeneratorPSP::UpdateRegister( EN64Reg n64_reg, EPspReg psp_reg, bool o
 
 	if( options == URO_HI_SIGN_EXTEND )
 	{
-		EPspReg scratch_reg = PspReg_V0;
 		if( mRegisterCache.IsCached( n64_reg, 1 ) )
 		{
-			scratch_reg = mRegisterCache.GetCachedReg( n64_reg, 1 );
+			EPspReg scratch_reg = mRegisterCache.GetCachedReg( n64_reg, 1 );
+			SRA( scratch_reg, psp_reg, 0x1f );		// Sign extend
+			StoreRegisterHi( n64_reg, scratch_reg );
 		}
-		SRA( scratch_reg, psp_reg, 0x1f );		// Sign extend
-		StoreRegisterHi( n64_reg, scratch_reg );
+		else if( n64_reg != N64Reg_R0 && mRegisterCache.IsCached( n64_reg, 0 ) )
+		{
+			// Don't write the high word yet: it is generated from the low word (which
+			// stays in a register) when it is read or flushed (see GenerateHiFromLo),
+			// and skipped entirely if the register is overwritten first.
+			mRegisterCache.ClearKnownValue( n64_reg, 1 );
+			mRegisterCache.MarkAsDirty( n64_reg, 1, false );
+			mRegisterCache.SetHiSignExtendPending( n64_reg, true );
+		}
+		else
+		{
+			// Low word went straight to memory: write the high word now while the value is at hand
+			SRA( PspReg_V0, psp_reg, 0x1f );		// Sign extend
+			StoreRegisterHi( n64_reg, PspReg_V0 );
+		}
+		mRegisterCache.SetHiSignOfLo( n64_reg, n64_reg != N64Reg_R0 );
 	}
 	else	// == URO_HI_CLEAR
 	{
@@ -868,8 +906,86 @@ const CN64RegisterCachePSP & CCodeGeneratorPSP::GetRegisterCacheFromHandle( Regi
 //	Flush a specific register back to memory if dirty.
 //	Clears the dirty flag and invalidates the contents if specified
 
+void CCodeGeneratorPSP::GenerateHiFromLo( EPspReg psp_dst, const CN64RegisterCachePSP & cache, EN64Reg n64_reg )
+{
+	if( cache.IsKnownValue( n64_reg, 0 ) )
+	{
+		LoadConstant( psp_dst, cache.GetKnownValue( n64_reg, 0 )._s32 >> 31 );
+	}
+	else if( cache.IsCached( n64_reg, 0 ) && cache.IsValid( n64_reg, 0 ) )
+	{
+		SRA( psp_dst, cache.GetCachedReg( n64_reg, 0 ), 0x1f );
+	}
+	else
+	{
+		GetVar( psp_dst, &gGPR[ n64_reg ]._u32_0 );
+		SRA( psp_dst, psp_dst, 0x1f );
+	}
+}
+
+// Is the register known to hold a plain 32 bit value (high word = sign extension of low word)?
+bool CCodeGeneratorPSP::IsSignExtended32( EN64Reg n64_reg ) const
+{
+	if( n64_reg == N64Reg_R0 || mRegisterCache.IsHiSignOfLo( n64_reg ) || mRegisterCache.IsHiSignExtendPending( n64_reg ) )
+	{
+		return true;
+	}
+	return mRegisterCache.IsKnownValue( n64_reg, 0 ) && mRegisterCache.IsKnownValue( n64_reg, 1 ) &&
+		   mRegisterCache.GetKnownValue( n64_reg, 1 )._s32 == ( mRegisterCache.GetKnownValue( n64_reg, 0 )._s32 >> 31 );
+}
+
+// AND/OR/XOR/NOR of two plain 32 bit values is a plain 32 bit value, so only the low words
+// need computing. Returns false if the general 64 bit code is needed.
+bool CCodeGeneratorPSP::GenerateLogical32( EN64Reg rd, EN64Reg rs, EN64Reg rt, u32 spec_op )
+{
+	if( !IsSignExtended32( rs ) || !IsSignExtended32( rt ) )
+		return false;
+	if( mRegisterCache.IsKnownValue( rs, 0 ) && mRegisterCache.IsKnownValue( rt, 0 ) )
+		return false;		// Leave constant folding to the general code
+
+	EPspReg	reg_lo_d( GetRegisterNoLoadLo( rd, PspReg_V0 ) );
+	EPspReg	reg_lo_a( GetRegisterAndLoadLo( rs, PspReg_V0 ) );
+	EPspReg	reg_lo_b( GetRegisterAndLoadLo( rt, PspReg_A0 ) );
+	switch( spec_op )
+	{
+	case SpecOp_AND:	AND( reg_lo_d, reg_lo_a, reg_lo_b );	break;
+	case SpecOp_OR:		OR( reg_lo_d, reg_lo_a, reg_lo_b );		break;
+	case SpecOp_XOR:	XOR( reg_lo_d, reg_lo_a, reg_lo_b );	break;
+	default:			NOR( reg_lo_d, reg_lo_a, reg_lo_b );	break;
+	}
+	UpdateRegister( rd, reg_lo_d, URO_HI_SIGN_EXTEND );
+	return true;
+}
+
+// Write out a pending sign extended high word (uses V0)
+void CCodeGeneratorPSP::MaterialiseHiSignExtend( CN64RegisterCachePSP & cache, EN64Reg n64_reg )
+{
+	if( cache.IsHiSignExtendPending( n64_reg ) )
+	{
+		if( cache.IsKnownValue( n64_reg, 0 ) )
+		{
+			SetVar( &gGPR[ n64_reg ]._u32_1, (u32)( cache.GetKnownValue( n64_reg, 0 )._s32 >> 31 ) );
+		}
+		else
+		{
+			GenerateHiFromLo( PspReg_V0, cache, n64_reg );
+			SetVar( &gGPR[ n64_reg ]._u32_1, PspReg_V0 );
+		}
+		cache.SetHiSignExtendPending( n64_reg, false );
+	}
+}
+
 void CCodeGeneratorPSP::FlushRegister( CN64RegisterCachePSP & cache, EN64Reg n64_reg, u32 lo_hi_idx, bool invalidate )
 {
+	if( lo_hi_idx == 1 )
+	{
+		MaterialiseHiSignExtend( cache, n64_reg );
+		if( invalidate )
+		{
+			cache.SetHiSignOfLo( n64_reg, false );		// A called function may change the register in memory
+		}
+	}
+
 	if( cache.IsDirty( n64_reg, lo_hi_idx ) )
 	{
 		if( cache.IsKnownValue( n64_reg, lo_hi_idx ) )
@@ -925,8 +1041,9 @@ void	CCodeGeneratorPSP::FlushAllRegisters( CN64RegisterCachePSP & cache, bool in
 	{
 		EN64Reg	n64_reg = EN64Reg( i );
 
-		FlushRegister( cache, n64_reg, 0, invalidate );
+		// High word first: a pending sign extension is made from the low word while it is still in a register
 		FlushRegister( cache, n64_reg, 1, invalidate );
+		FlushRegister( cache, n64_reg, 0, invalidate );
 	}
 
 	FlushAllFloatingPointRegisters( cache, invalidate );
@@ -1038,6 +1155,12 @@ CJumpLocation CCodeGeneratorPSP::GenerateExitCode( u32 exit_address, u32 jump_ad
 		DAEDALUS_ASSERT( mUseFixedRegisterAllocation, "Have mLoopTop but unfixed register allocation?" );
 		#endif
 		FlushAllFloatingPointRegisters( mRegisterCache, false );
+
+		// Code at the loop top expects high words in memory to be up to date
+		for( u32 i {1}; i < NUM_N64_REGS; i++ )
+		{
+			MaterialiseHiSignExtend( mRegisterCache, EN64Reg( i ) );
+		}
 
 		// Check if we're ok to continue, without flushing any registers
 		GetVar( PspReg_V0, &gCPUState.CPUControl[C0_COUNT]._u32 );
@@ -1401,6 +1524,34 @@ void	CCodeGeneratorPSP::GetBaseRegisterAndOffset( const void * p_address, EPspRe
 //	Generates instruction handler for the specified op code.
 //	Returns a jump location if an exception handler is required
 
+// Ops whose generated code only reads the low words of their source registers, so a
+// pending sign extended high word never has to be written out for them (see GenerateOpCode).
+static bool OpReadsOnlyLowWords( OpCode op_code )
+{
+	switch( op_code.op )
+	{
+	case OP_SPECOP:
+		switch( op_code.spec_op )
+		{
+		case SpecOp_SLL:	case SpecOp_SRL:	case SpecOp_SRA:
+		case SpecOp_SLLV:	case SpecOp_SRLV:	case SpecOp_SRAV:
+		case SpecOp_ADD:	case SpecOp_ADDU:
+		case SpecOp_SUB:	case SpecOp_SUBU:
+		case SpecOp_SLT:	case SpecOp_SLTU:		// Low words only (ENABLE_64BIT is off)
+			return true;
+		default:
+			return false;
+		}
+	case OP_ADDI:	case OP_ADDIU:	case OP_ANDI:	case OP_LUI:
+	case OP_ORI:	case OP_XORI:	case OP_SLTI:	case OP_SLTIU:		// Low words only (ENABLE_64BIT is off)
+	case OP_LB:		case OP_LBU:	case OP_LH:		case OP_LHU:	case OP_LW:
+	case OP_SB:		case OP_SH:		case OP_SW:
+		return true;
+	default:
+		return false;
+	}
+}
+
 CJumpLocation	CCodeGeneratorPSP::GenerateOpCode( const STraceEntry& ti, bool branch_delay_slot, const SBranchDetails * p_branch, CJumpLocation * p_branch_jump )
 {
 	#ifdef DAEDALUS_PROFILE
@@ -1423,6 +1574,22 @@ CJumpLocation	CCodeGeneratorPSP::GenerateOpCode( const STraceEntry& ti, bool bra
 	if( branch_delay_slot ) mPreviousStoreBase = mPreviousLoadBase = N64Reg_R0;	//Invalidate
 
 	mQuickLoad = ti.Usage.Access8000;
+
+	// A pending high word is made from the low word. An op that writes a register's low
+	// word in place and then reads its high word (64 bit ops, AND/OR/XOR/NOR, SLT...)
+	// would see the new low word, so write the high word out first. Ops that only ever
+	// read low words are safe and skip this.
+	if( !OpReadsOnlyLowWords( op_code ) &&
+		!( op_code.op == OP_SPECOP &&
+		   ( op_code.spec_op == SpecOp_AND || op_code.spec_op == SpecOp_OR || op_code.spec_op == SpecOp_XOR || op_code.spec_op == SpecOp_NOR ) &&
+		   IsSignExtended32( EN64Reg( op_code.rs ) ) && IsSignExtended32( EN64Reg( op_code.rt ) ) ) )		// GenerateLogical32 will handle these
+	{
+		const EN64Reg	r_s = EN64Reg( op_code.rs );
+		const EN64Reg	r_t = EN64Reg( op_code.rt );
+		const EN64Reg	r_d = EN64Reg( op_code.rd );
+		if( r_d == r_s || r_d == r_t )	MaterialiseHiSignExtend( mRegisterCache, r_d );
+		if( r_t == r_s )				MaterialiseHiSignExtend( mRegisterCache, r_t );
+	}
 
 	const EN64Reg	rs = EN64Reg( op_code.rs );
 	const EN64Reg	rt = EN64Reg( op_code.rt );
@@ -2945,6 +3112,8 @@ inline void	CCodeGeneratorPSP::GenerateDADDU( EN64Reg rd, EN64Reg rs, EN64Reg rt
 
 inline void	CCodeGeneratorPSP::GenerateAND( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 {
+	if( GenerateLogical32( rd, rs, rt, SpecOp_AND ) ) return;
+
 	//gGPR[ op_code.rd ]._u64 = gGPR[ op_code.rs ]._u64 & gGPR[ op_code.rt ]._u64;
 
 	bool HiIsDone = false;
@@ -3001,6 +3170,8 @@ inline void	CCodeGeneratorPSP::GenerateAND( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 
 void	CCodeGeneratorPSP::GenerateOR( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 {
+	if( GenerateLogical32( rd, rs, rt, SpecOp_OR ) ) return;
+
 	//gGPR[ op_code.rd ]._u64 = gGPR[ op_code.rs ]._u64 | gGPR[ op_code.rt ]._u64;
 
 	bool HiIsDone = false;
@@ -3119,6 +3290,8 @@ void	CCodeGeneratorPSP::GenerateOR( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 
 inline void	CCodeGeneratorPSP::GenerateXOR( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 {
+	if( GenerateLogical32( rd, rs, rt, SpecOp_XOR ) ) return;
+
 	//gGPR[ op_code.rd ]._u64 = gGPR[ op_code.rs ]._u64 ^ gGPR[ op_code.rt ]._u64;
 
 	bool HiIsDone = false;
@@ -3170,6 +3343,8 @@ inline void	CCodeGeneratorPSP::GenerateXOR( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 
 inline void	CCodeGeneratorPSP::GenerateNOR( EN64Reg rd, EN64Reg rs, EN64Reg rt )
 {
+	if( GenerateLogical32( rd, rs, rt, SpecOp_NOR ) ) return;
+
 	//gGPR[ op_code.rd ]._u64 = ~(gGPR[ op_code.rs ]._u64 | gGPR[ op_code.rt ]._u64);
 
 	bool HiIsDone = false;
