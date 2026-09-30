@@ -157,6 +157,8 @@ bool CGraphicsPluginImpl::Initialise()
 		return false;
 	}
 
+	Watchdog_Start();
+
 	if (!DLParser_Initialise())
 	{
 		return false;
@@ -195,6 +197,7 @@ void CGraphicsPluginImpl::UpdateScreen()
 	if( current_origin != last_origin )
 	{
 		Benchmark_NoteFrame();
+		Watchdog_NoteFrame();
 		//printf( "Flip (%08x, %08x)\n", current_origin, last_origin );
 		// Display Info also turns on the timing breakdown, perf.txt and dynarec.txt
 		PerfStats_SetEnabled( gGlobalPreferences.DisplayFramerate );
@@ -293,6 +296,7 @@ void CGraphicsPluginImpl::RomClosed()
 	#ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0, "Finalising PSPGraphics");
 	#endif
+	Watchdog_Stop();
 	PerfStats_Flush();
 	DLParser_Finalise();
 	CTextureCache::Destroy();

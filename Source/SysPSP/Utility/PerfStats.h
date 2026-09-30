@@ -147,6 +147,12 @@ void	PerfStats_Flush();
 // Start a new game header in perf.txt (with a note, e.g. the ROM file), and turn dynarec.txt on/off
 void	PerfStats_NewLogSection( const char * note );
 void	PerfStats_SetDynarecReport( bool enabled );
+// Hang watchdog: a background thread that writes hang.txt if the game stops presenting
+// frames for a few seconds while the CPU is meant to be running.
+extern volatile u32 gWatchdogFrames;
+inline void Watchdog_NoteFrame()	{ gWatchdogFrames = gWatchdogFrames + 1; }
+void	Watchdog_Start();
+void	Watchdog_Stop();
 
 class CPerfScope
 {
