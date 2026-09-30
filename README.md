@@ -9,8 +9,9 @@ This fork runs on the PSP only. Support for 3DS, Vita, Linux, macOS and Windows 
 - Dynamic recompiler (dynarec) that translates N64 MIPS code into native PSP code
 - VFPU-accelerated graphics maths and optional audio processing on the Media Engine
 - High-level emulation of graphics and audio microcode
+- Compatibility rating shown as a green, yellow or red square next to each game in the ROM list (see [Compatibility ratings](#compatibility-ratings))
 - Built-in timing display and performance logs to see where each game spends its time (see [Performance display and logs](#performance-display-and-logs))
-- Crash screen that saves `exception.txt` for bug reports
+- Crash screen that saves `exception.txt`, and a watchdog that writes `hang.txt` when a game freezes, for bug reports
 
 ## Changes in this fork
 
@@ -30,12 +31,32 @@ This fork runs on the PSP only. Support for 3DS, Vita, Linux, macOS and Windows 
 - **Graphics:** the last blend state lookup is remembered, and the renderer avoids copying `shared_ptr`s in hot paths.
 - A fast `FastRand()` replaces creating a new random engine on every call.
 
+### Audio
+
+- **Crackling removed.** The audio buffer held only 2048 samples while the PSP audio thread takes 1024 at a time, so any slow frame ran it dry and the output snapped to silence (a click) and back. The rate converter also restarted on every audio chunk, causing a small glitch every 16-30 ms even at full speed. The buffer is now 4096 samples, the rate converter runs continuously, and pitch is always exact.
+- **Soft gaps when a game runs slow.** If a game cannot produce audio fast enough, playback fades out and waits until the buffer is half full before fading back in, instead of crackling. At full speed the audio is clean.
+- **Asynchronous audio no longer corrupts games.** The Media Engine wrote its results to N64 RAM through its own cache, which is written back in 64-byte blocks and could overwrite game data next to the audio buffers (for example Super Mario 64 crashing with sound on). It now writes to N64 RAM directly.
+- **Asynchronous audio never runs two audio lists at once.** The main CPU used to process the next list itself while the Media Engine was still busy, corrupting both. It now waits for the Media Engine, and falls back to synchronous audio if the Media Engine stops responding.
+
 ### Fixes
 
 - **Dynarec:** `MTLO`/`MTHI` read the wrong register in compiled code, which set the multiply result registers to zero.
-- **Asynchronous audio:** two audio lists could be processed at the same time (Media Engine and main CPU), corrupting each other. The CPU now waits for the Media Engine, and falls back to synchronous audio if it stops responding.
+- **File Cache mode (the default):** a ROM read that came up short (the last chunk of a ROM whose size is not a multiple of 8 KB) left the file stream in an error state, so every later read failed and the game was fed stale data. The error state is now cleared before every read.
+- **Loads past the end of the ROM** copy what exists instead of nothing.
 - **ROM Buffer mode:** ROMs between 16 MB and 32 MB were loaded into a 16 MB buffer on PSP 2000 and later, which crashed. Larger ROMs now stream through the file cache.
 - **Crash screen:** it was only enabled in debug builds and looked for its plugin in the wrong folder. It now works in release builds. `exception.txt` includes PSP and N64 disassembly around the crash and what the emulator was doing at the time.
+- **Per-game settings in `roms.ini`** can now turn features off. `PatchesEnabled=no` (the High Level Emulation setting), `DynarecLoopOptimisation=no` and `MemoryAccessOptimisation=no` force those off for a game known to break with them. Previously `roms.ini` could only turn things on. Cruis'n USA uses this and is now playable.
+
+### Compatibility ratings
+
+`roms.ini` entries can carry `Compatibility=Good`, `Partial` or `Broken`, shown in the ROM list as a square before the game's name and as a "Compat:" line in the info panel:
+
+- Green (`Good`): playable or better.
+- Yellow (`Partial`): runs, but too slow or glitchy to really play.
+- Red (`Broken`): crashes or hangs.
+- No square: not rated yet.
+
+Ratings are matched by the ROM's ID, so they work whatever the file is called. They come from the Daedalus PSP compatibility list (tested with DaedalusX64 R1878), the upstream wiki and testing of this fork on real hardware. Some red ratings predate fixes in this fork, so a game marked red may now work: reports are welcome.
 
 ### Performance display and logs
 
@@ -47,13 +68,19 @@ Set **Display Framerate** to **FPS + Timing** in the global settings to show a b
 While this is on, the emulator also writes these files to the DaedalusX64 folder:
 
 - `perf.txt`: one line per second with the breakdown above, plus audio time, GPU wait and idle time.
-- `dynarec.txt`: every ~10 seconds, a report of the hottest interpreted and compiled code, traces that failed to compile and why, and fragment cache flushes.
+- `dynarec.txt`: every ~10 seconds, a report of the hottest interpreted and compiled code, traces that failed to compile and why, fragment cache flushes, and the game's ROM loads (count, failures, last addresses).
+
+Two more files are written when something goes wrong, whatever the setting:
+
+- `exception.txt`: saved from the crash screen (press X). Registers, disassembly and what the emulator was doing when it crashed.
+- `hang.txt`: written if a game stops showing new frames for about 4 seconds. Records what the emulator was stuck on, the N64 code position, the graphics microcode and the last graphics command.
 
 These files are the most useful thing to attach when reporting a slow or broken game.
 
 ## Known issues
 
-- Cruis'n USA, Duke Nukem: Zero Hour and Star Wars Episode I: Racer crash after their intros. This is under investigation.
+- Duke Nukem: Zero Hour stays on its loading screen when starting the main game. The game keeps running (30 fps, streaming from the ROM) but never finishes loading. This is under investigation.
+- Star Wars Episode I: Racer runs but slowly (about 7-12 fps in races).
 - GoldenEye 007 does not get past the intro.
 
 ## Usage
