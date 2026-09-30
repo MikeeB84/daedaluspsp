@@ -31,11 +31,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 namespace
 {
-	// When the buffer runs low (the game is running below full speed), audio is
-	// stretched by up to this much (12 bit fixed point, 1536 = 37.5%) instead of
-	// running dry, which lowers the pitch slightly rather than crackling.
-	const s32 kMaxStretch = 1536;
-
 	// Fade length (in output samples) used when the buffer runs dry and when
 	// sound resumes, so gaps don't click.
 	const u32 kFadeSamples = 128;
@@ -49,9 +44,11 @@ namespace
 CAudioBuffer::CAudioBuffer(u32 buffer_size)
     : mBufferBegin(new Sample[buffer_size]),
       mBufferEnd(mBufferBegin + buffer_size), mReadPtr(mBufferBegin),
-      mWritePtr(mBufferBegin), mResamplePos(0), mFadeIn(0) {
+      mWritePtr(mBufferBegin), mResamplePos(0), mFadeIn(0), mFadeOut(0),
+      mStarved(true) {
   mLastInput.L = mLastInput.R = 0;
   mLastOutput.L = mLastOutput.R = 0;
+  mFadeOutFrom.L = mFadeOutFrom.R = 0;
 }
 
 CAudioBuffer::~CAudioBuffer() { delete[] mBufferBegin; }
@@ -99,17 +96,9 @@ fh.flush();
   //	Position 0 is the last sample of the previous call, (i + 1) << 12 is
   //	samples[i]. 'step' is how far to move through the input per output sample.
   //
+  //	(Stretching the audio when the buffer runs low was tried, but varying the
+  //	rate per chunk made the pitch wobble. Pitch is kept exact; gaps fade instead.)
   s32 step = s32((frequency << 12) / output_freq);
-
-  // Buffer running low: produce more output per input sample (slightly lower
-  // pitch) so playback doesn't run dry while the game is below full speed.
-  const s32 capacity = mBufferEnd - mBufferBegin;
-  const s32 target = capacity / 2;
-  const s32 buffered = s32(GetNumBufferedSamples());
-  if (buffered < target) {
-    s32 stretch = 4096 + ((target - buffered) * kMaxStretch) / target;
-    step = (step * 4096) / stretch;
-  }
   if (step < 1)
     step = 1;
 
@@ -154,10 +143,26 @@ u32 CAudioBuffer::Drain(Sample *samples, u32 num_samples) {
   Sample *out_ptr(samples);
   u32 samples_required(num_samples);
 
-  while (samples_required > 0) {
+  // After running dry (and at start up) wait until the buffer is half full before
+  // playing again. This keeps a cushion against slow frames, and gives a few longer
+  // gaps rather than lots of tiny ones when the game is below full speed.
+  if (mStarved) {
+    const u32 capacity = u32(mBufferEnd - mBufferBegin);
+    if (GetNumBufferedSamples() >= capacity / 2) {
+      mStarved = false;
+      mFadeIn = 0;
+    }
+  }
+
+  while (!mStarved && samples_required > 0) {
     // Check if empty
-    if (read_ptr == write_ptr)
+    if (read_ptr == write_ptr) {
+      // Ran dry: fade out from the last sample played
+      mStarved = true;
+      mFadeOutFrom = mLastOutput;
+      mFadeOut = kFadeSamples;
       break;
+    }
 
     // AddSamples writes to the slot after the write pointer, then advances it
     read_ptr++;
@@ -177,37 +182,25 @@ u32 CAudioBuffer::Drain(Sample *samples, u32 num_samples) {
     samples_required--;
   }
 
-#ifdef DAEDALUS_DEBUG_AUDIO
-std::ofstream fh;
-
- if (!fh.is_open())
- {
-  fh.open("audio_out.raw",  std::ios::binary);
-  fh.write(reinterpret_cast<const char*>(samples), sizeof(Sample) * num_samples - samples_required);
-  fh.flush();
- }
-#endif 
   mReadPtr = read_ptr; // No need to invalidate, as this is uncached
 
-  //
-  //	Ran dry: fade out from the last sample played rather than dropping
-  //	straight to zero (which clicks), then silence. The next samples fade in.
-  //
-  if (samples_required > 0) {
-    const u32 fade = samples_required < kFadeSamples ? samples_required : kFadeSamples;
-    for (u32 i = 0; i < fade; ++i) {
-      const s32 level = s32(fade - 1 - i);
-      out_ptr->L = s16((s32(mLastOutput.L) * level) / s32(fade));
-      out_ptr->R = s16((s32(mLastOutput.R) * level) / s32(fade));
-      out_ptr++;
+  // Starved: finish fading out (this continues across calls), then silence
+  const u32 samples_written = num_samples - samples_required;
+  while (samples_required > 0) {
+    if (mFadeOut > 0) {
+      mFadeOut--;
+      out_ptr->L = s16((s32(mFadeOutFrom.L) * s32(mFadeOut)) / s32(kFadeSamples));
+      out_ptr->R = s16((s32(mFadeOutFrom.R) * s32(mFadeOut)) / s32(kFadeSamples));
+    } else {
+      out_ptr->L = out_ptr->R = 0;
     }
-    if (samples_required > fade)
-      memset(out_ptr, 0, (samples_required - fade) * sizeof(Sample));
-
+    out_ptr++;
+    samples_required--;
+  }
+  if (mStarved) {
     mLastOutput.L = mLastOutput.R = 0;
-    mFadeIn = 0;
   }
 
   // Return the number of samples written
-  return num_samples - samples_required;
+  return samples_written;
 }
