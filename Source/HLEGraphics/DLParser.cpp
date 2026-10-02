@@ -170,6 +170,12 @@ void RDP_MoveMemLight(u32 light_idx, const N64Light *light);
 // Used to keep track of when we're processing the first display list
 static bool gFirstCall = true;
 
+// Last display list command processed, for the hang watchdog (hang.txt)
+volatile u32 gDLLastCmd0 = 0;
+volatile u32 gDLLastCmd1 = 0;
+volatile u32 gDLLastPC = 0;
+volatile s32 gDLLastDepth = -1;
+
 static u32				gSegments[16] {};
 static RDP_Scissor		scissors {};
 static RDP_GeometryMode gGeometryMode {};
@@ -469,6 +475,11 @@ static u32 DLParser_ProcessDList(u32 instruction_limit)
 	while(gDlistStackPointer >= 0)
 	{
 		DLParser_FetchNextCommand( &command );
+
+		gDLLastCmd0 = command.inst.cmd0;
+		gDLLastCmd1 = command.inst.cmd1;
+		gDLLastPC = gDlistStack.address[gDlistStackPointer] - 8;
+		gDLLastDepth = gDlistStackPointer;
 
 		DL_BEGIN_INSTR(current_instruction_count, command.inst.cmd0, command.inst.cmd1, gDlistStackPointer, gUcodeName[command.inst.cmd]);
 

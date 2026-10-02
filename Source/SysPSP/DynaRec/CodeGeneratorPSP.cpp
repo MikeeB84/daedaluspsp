@@ -26,6 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <algorithm>
 
 #include "N64RegisterCachePSP.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 #include "Config/ConfigOptions.h"
 #include "Core/CPU.h"
@@ -305,6 +306,12 @@ void	CCodeGeneratorPSP::Initialise( u32 entry_address, u32 exit_address, u32 * h
 	mPreviousStoreBase = N64Reg_R0;	//Invalidate
 	mFloatCMPIsValid = false;
 	mMultIsValid = false;
+
+	// Let the profiler attribute time to this fragment (only when stats are shown)
+	if( gPerfStatsEnabled )
+	{
+		SetVar( const_cast< u32 * >( &gPerfFragmentEntry ), entry_address );
+	}
 
 	if( hit_counter != nullptr )
 	{

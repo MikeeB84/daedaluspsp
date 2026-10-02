@@ -32,6 +32,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Utility/Profiler.h"
 #include "Utility/IO.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 #include "AssemblyUtils.h"
 
@@ -274,6 +275,7 @@ void CFragmentCache::InsertFragment( CFragment * p_fragment )
 //*************************************************************************************
 void CFragmentCache::Clear()
 {
+	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );
 #ifdef DAEDALUS_DEBUG_CONSOLE
 	if(CDebugConsole::IsAvailable())
 	{

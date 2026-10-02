@@ -16,6 +16,8 @@
 #include "Core/RomSettings.h"
 #include "Debug/Dump.h"
 #include "Utility/PrintOpCode.h"
+#include "Core/Memory.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 
 PspDebugRegBlock *exception_regs;
@@ -75,13 +77,26 @@ static void DumpInformation(PspDebugRegBlock * regs)
 				regName[i+3], ( ((u32)regs->r[i+3] >= RDRAM_base) & ((u32)regs->r[i+3] <= RDRAM_end) ) ? "*" : ":", (int)regs->r[i+3]);
 	}
 
-#ifndef DAEDALUS_SILENT
-	fprintf(fp, "\nDisassembly (PSP):\n");
+	// What the emulator was doing (only tracked while "Display Info" is set to FPS + Timing)
+	{
+		static const char * const kCategoryNames[] = { "CPU other", "CPU interpreter", "CPU compiled code", "CPU compiling",
+			"Graphics", "Graphics vertex", "Graphics texture", "Graphics draw", "Audio", "GPU wait", "Frame limiter" };
+		u32 depth = PerfStatsInternal::gDepth;
+		u32 category = depth > 0 ? PerfStatsInternal::gStack[ (depth <= PerfStatsInternal::kMaxDepth ? depth : PerfStatsInternal::kMaxDepth) - 1 ] : 0;
+		fprintf(fp, "\nEmulator activity: %s%s\n", category < NUM_PERF_CATEGORIES ? kCategoryNames[ category ] : "?",
+			gPerfStatsEnabled ? "" : " (timing display off, not tracked)");
+		fprintf(fp, "Last compiled fragment entered (N64): %08x\n", (u32)gPerfFragmentEntry);
+	}
+
 	u32 inst_before_epc = 24;
 	u32 inst_after_epc = 24;
-	const OpCode * p( (OpCode *)(regs->epc - (inst_before_epc * 4)) );
+	fprintf(fp, "\nDisassembly (PSP):\n");
+	// Only read code from main user memory, in case the PC itself is bad
+	const u32 psp_code_start = ( (u32)regs->epc & ~3 ) - inst_before_epc * 4;
+	const bool psp_code_readable = ( psp_code_start >= 0x08800000 ) && ( (u32)regs->epc + inst_after_epc * 4 < 0x0A000000 );
+	const OpCode * p( (OpCode *)psp_code_start );
 
-	while( p < (OpCode *)(regs->epc + (inst_after_epc * 4)) )
+	while( psp_code_readable && p < (OpCode *)((regs->epc & ~3) + (inst_after_epc * 4)) )
 	{
 		char opinfo[128];
 
@@ -92,7 +107,6 @@ static void DumpInformation(PspDebugRegBlock * regs)
 
 		++p;
 	}
-#endif
 
 	// output FPU Regs
 	fprintf(fp, "\nFPU registers (PSP):\n");
@@ -144,28 +158,31 @@ static void DumpInformation(PspDebugRegBlock * regs)
 		fprintf(fp, "Last known PC (N64): %08x\n", gCPUState.CurrentPC);
 	}
 
-#ifndef DAEDALUS_SILENT
 	fprintf(fp, "\nDisassembly (N64):\n");
-	inst_before_epc = 24;
-	inst_after_epc = 24;
 
-	u8 * p_base;
-	Memory_GetInternalReadAddress(gCPUState.CurrentPC-32, (void**)&p_base);
+	// KSEG0/KSEG1 addresses map directly onto RDRAM (TLB mapped code isn't listed)
+	u8 * p_base = nullptr;
+	if( ( gCPUState.CurrentPC & 0xC0000000 ) == 0x80000000 && ( gCPUState.CurrentPC & 0x1FFFFFFF ) < gRamSize )
+	{
+		p_base = g_pu8RamBase + ( gCPUState.CurrentPC & 0x1FFFFFFF );
+	}
+	// Only if the PC maps into RDRAM (at least inst_before_epc instructions in)
+	const bool n64_code_readable = ( (u32)p_base >= RDRAM_base + inst_before_epc * 4 ) && ( (u32)p_base + inst_after_epc * 4 <= RDRAM_end );
 	const OpCode * op_start( reinterpret_cast< const OpCode * >( p_base - inst_before_epc * 4) );
 	const OpCode * op_end(   reinterpret_cast< const OpCode * >( p_base + inst_after_epc * 4 ) );
 
-	while( op_start < op_end )
+	while( n64_code_readable && op_start < op_end )
 	{
 		char opinfo[128];
 
 		OpCode op( *op_start );
 
-		SprintOpCodeInfo( opinfo, (u32)op_start, op );
-		fprintf(fp, "\t%s%p: <0x%08x> %s\n",(u32)p_base == (u32)op_start ? "*":" ", op_start, op._u32, opinfo);
+		const u32 n64_address = gCPUState.CurrentPC + (u32)( (const u8 *)op_start - p_base );
+		SprintOpCodeInfo( opinfo, n64_address, op );
+		fprintf(fp, "\t%s%08x: <0x%08x> %s\n",(u32)p_base == (u32)op_start ? "*":" ", n64_address, op._u32, opinfo);
 
 		++op_start;
 	}
-#endif
 
 	fclose(fp);
 }

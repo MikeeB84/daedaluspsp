@@ -58,6 +58,9 @@ struct UcodeInfo
 
 static UcodeInfo gUcodeInfo[ MAX_UCODE_CACHE_ENTRIES ];
 
+// Last microcode detected, for the hang watchdog (hang.txt)
+char gUcodeDescription[192] = "none";
+
 static bool	GBIMicrocode_DetectVersionString( u32 data_base, u32 data_size, char * str, u32 str_len )
 {
 	#ifdef DAEDALUS_ENABLE_ASSERTS
@@ -229,6 +232,11 @@ u32	GBIMicrocode_DetectVersion( u32 code_base, u32 code_size, u32 data_base, u32
 	gUcodeInfo[ i ].index = idx;
 	gUcodeInfo[ i ].ucode = ucode_version;
 	gUcodeInfo[ i ].set = true;
+
+	if( ucode_offset != u32(~0) )
+		snprintf( gUcodeDescription, sizeof( gUcodeDescription ), "custom %u (based on %u), hash 0x%08x, \"%s\"", (unsigned)ucode_version, (unsigned)ucode_offset, (unsigned)code_hash, str );
+	else
+		snprintf( gUcodeDescription, sizeof( gUcodeDescription ), "%u, hash 0x%08x, \"%s\"", (unsigned)ucode_version, (unsigned)code_hash, str );
 #ifdef DAEDALUS_DEBUG_CONSOLE
 	DBGConsole_Msg(0,"Detected %s Ucode is: [M Ucode %d, 0x%08x, \"%s\", \"%s\"]",ucode_offset == u32(~0) ? "" :"Custom", ucode_version, code_hash, str, g_ROM.settings.GameName.c_str() );
 	#endif

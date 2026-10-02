@@ -246,6 +246,11 @@ static ECPUEventType CPU_PopEvent()
 	return event_type;
 }
 
+u32 CPU_GetVerticalInterruptCount()
+{
+	return gVerticalInterrupts;
+}
+
 // XXXX This is for savestate. Looks very suspicious to me
 u32 CPU_GetVideoInterruptEventCount()
 {

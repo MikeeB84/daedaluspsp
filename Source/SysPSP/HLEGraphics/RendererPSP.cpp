@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "RendererPSP.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 #include <pspgu.h>
 
@@ -382,6 +383,7 @@ inline void RendererPSP::RenderFog( DaedalusVtx * p_vertices, u32 num_vertices, 
 
 void RendererPSP::RenderUsingCurrentBlendMode( DaedalusVtx * p_vertices, u32 num_vertices, u32 triangle_mode, u32 render_mode, bool disable_zbuffer )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_DRAW );
 	static bool	ZFightingEnabled {false};
 
 	DAEDALUS_PROFILE( "RendererPSP::RenderUsingCurrentBlendMode" );

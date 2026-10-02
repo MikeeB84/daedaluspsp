@@ -43,6 +43,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Utility/Macros.h"
 #include "Utility/Profiler.h"
 #include "Utility/Synchroniser.h"
+#include "SysPSP/Utility/PerfStats.h"
+#include <algorithm>
 
 #ifdef DAEDALUS_ENABLE_DYNAREC
 
@@ -92,6 +94,7 @@ u32 gFragmentLookupSuccess {};
 //*****************************************************************************
 void R4300_CALL_TYPE CPU_InvalidateICache()
 {
+	PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, 0, 0xFFFFFFFF );
 	CPU_ResetFragmentCache();
 }
 
@@ -111,6 +114,7 @@ void R4300_CALL_TYPE CPU_InvalidateICacheRange( u32 address, u32 length )
 {
 	if( gFragmentCache.ShouldInvalidateOnWrite( address, length ) )
 	{
+		PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, address, length );
 #ifndef DAEDALUS_SILENT
 		printf( "Write to %08x (%d bytes) overlaps fragment cache entries\n", address, length );
 #endif
@@ -237,11 +241,15 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 		// Keep executing ops as long as there's nothing to do
 		//
 		u32	stuff_to_do( gCPUState.GetStuffToDo() );
-		while(stuff_to_do == 0)
 		{
-			CPU_EXECUTE_OP< TraceEnabled >();
+			DAEDALUS_PERF_SCOPE( PERF_CPU_INTERP );
+			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
+			while(stuff_to_do == 0)
+			{
+				CPU_EXECUTE_OP< TraceEnabled >();
 
-			stuff_to_do = gCPUState.GetStuffToDo();
+				stuff_to_do = gCPUState.GetStuffToDo();
+			}
 		}
 
 		if( TraceEnabled && (stuff_to_do != CPU_CHANGE_CORE) )
@@ -259,10 +267,26 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 				if(stuff_to_do == CPU_CHECK_INTERRUPTS && gCPUState.Delay == NO_DELAY )		// Note checking for exactly equal, not just that it's set
 				{
 					//DBGConsole_Msg( 0, "Adding chunk at %08x after interrupt\n", gTraceRecorder.GetStartTraceAddress() );
+					PerfStats_Count( PERF_COUNT_TRACE_SALVAGED );
+					PerfStats_TraceEvent( TRACE_EVENT_SALVAGED, gTraceRecorder.GetStartTraceAddress(), gCPUState.CurrentPC, stuff_to_do, gTraceRecorder.GetTraceLength() );
 					gTraceRecorder.StopTrace( gCPUState.CurrentPC );
 					CPU_CreateAndAddFragment();
 				}
 #endif
+				if( gTraceRecorder.IsTraceActive() )
+				{
+					PerfStats_Count( PERF_COUNT_TRACE_ABORT );
+					if( gPerfStatsEnabled )
+					{
+						const u32 trace_start = gTraceRecorder.GetStartTraceAddress();
+						const u32 trace_length = gTraceRecorder.GetTraceLength();
+						PerfStats_TraceEvent( TRACE_EVENT_ABORT, trace_start, gCPUState.CurrentPC, stuff_to_do, trace_length );
+						u32 addresses[ 48 ];
+						u32 count = trace_length < 48 ? trace_length : 48;
+						for( u32 i = 0; i < count; ++i ) addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
+						PerfStats_CaptureAbortedTrace( trace_start, addresses, count );
+					}
+				}
 
 				gTraceRecorder.AbortTrace();		// Abort any traces that were terminated through an interrupt etc
 			}
@@ -362,10 +386,27 @@ void	CPU_DumpFragmentCache()
 //*****************************************************************************
 void CPU_CreateAndAddFragment()
 {
+	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );
+
+	// Keep the trace's instruction addresses for the profiler (CreateFragment clears the trace)
+	static u32 trace_addresses[ 1600 ];		// MAX_TRACE_LENGTH is 1500
+	u32 trace_count = 0;
+	if( gPerfStatsEnabled )
+	{
+		trace_count = std::min< u32 >( gTraceRecorder.GetTraceLength(), 1600 );
+		for( u32 i = 0; i < trace_count; ++i ) trace_addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
+	}
+
 	CFragment * p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 
 	if( p_fragment != nullptr )
 	{
+		if( trace_count > 0 )
+		{
+			PerfStats_NoteFragment( p_fragment->GetEntryAddress(), trace_addresses, trace_count, p_fragment->GetOutputLength() );
+		}
+		PerfStats_Count( PERF_COUNT_FRAGMENT );
+		PerfStats_TraceEvent( TRACE_EVENT_COMPILED, p_fragment->GetEntryAddress(), p_fragment->GetEntryAddress(), 0, 0 );
 		gHotTraceCountMap.erase( p_fragment->GetEntryAddress() );
 		gFragmentCache.InsertFragment( p_fragment );
 
@@ -455,7 +496,11 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 				change_core = true;
 			}
 
-			p_fragment->Execute();
+			{
+				DAEDALUS_PERF_SCOPE( PERF_CPU_DYNAREC );
+				p_fragment->Execute();
+			}
+			PerfStats_NoteInterpEntry( gCPUState.CurrentPC );
 
 			DYNAREC_PROFILE_ENTEREXIT( entry_address, gCPUState.CurrentPC, gCPUState.CPUControl[C0_COUNT]._u32 - entry_count );
 
@@ -481,6 +526,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						if(true)
 #endif
 						{
+							PerfStats_NoteFlush( FLUSH_INVALIDATE_DONE, 0, 0 );
 							gFragmentCache.Clear();
 							gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -498,6 +544,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 
 					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize)
 					{
+						PerfStats_NoteFlush( FLUSH_CACHE_FULL, 0, 0 );
 						gFragmentCache.Clear();
 						gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -512,6 +559,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						#ifdef DAEDALUS_DEBUG_CONSOLE
 						DBGConsole_Msg( 0, "Hot trace cache hit %d, dumping", gHotTraceCountMap.size() );
 						#endif
+						PerfStats_NoteFlush( FLUSH_HOT_MAP_FULL, 0, 0 );
 						gHotTraceCountMap.clear();
 						gFragmentCache.Clear();
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -521,6 +569,8 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 					else if( trace_count == gHotTraceThreshold )
 					{
 						//DBGConsole_Msg( 0, "Identified hot trace at [R%08x]! (size is %d)", gCPUState.CurrentPC, gHotTraceCountMap.size() );
+						PerfStats_Count( PERF_COUNT_TRACE_START );
+						PerfStats_TraceEvent( TRACE_EVENT_START, gCPUState.CurrentPC, gCPUState.CurrentPC, 0, 0 );
 						gTraceRecorder.StartTrace( gCPUState.CurrentPC );
 
 						if(!trace_already_enabled)
@@ -561,6 +611,14 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 	{
 		CPU_SelectCore();
 	}
+}
+
+// For dynarec.txt: how often a branch target has been hit, and whether it has a fragment
+void Dynamo_DescribePc( u32 pc, u32 * hot_count, bool * has_fragment )
+{
+	std::map< u32, u32 >::const_iterator it( gHotTraceCountMap.find( pc ) );
+	*hot_count = it != gHotTraceCountMap.end() ? it->second : 0;
+	*has_fragment = gFragmentCache.LookupFragmentQ( pc ) != nullptr;
 }
 
 void Dynamo_Reset()

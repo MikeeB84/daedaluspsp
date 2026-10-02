@@ -21,10 +21,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "stdafx.h"
 #include "PrintOpCode.h"
 
+#if defined(DAEDALUS_ENABLE_OS_HOOKS) && !defined(DAEDALUS_SILENT)
+#include "OSHLE/patch.h"
+#define NAME_OS_FUNCTIONS		// OS function names are only available in debug builds
+#endif
+
 //
-//	Exclude this from public release builds to save a little on the elf size
+//	Also built in release: the crash report (exception.txt) and dynarec.txt list instructions
 //
-#ifndef DAEDALUS_SILENT
 
 #include <stdio.h>
 
@@ -576,7 +580,7 @@ void SprintOp_Patch( char * str, u32 address, OpCode op )		{ sprintf(str, "Patch
 void SprintOp_J( char * str, u32 address, OpCode op )
 {
 	const char * p_name( "?" );
-#ifdef DAEDALUS_ENABLE_OS_HOOKS
+#ifdef NAME_OS_FUNCTIONS
 	p_name = Patch_GetJumpAddressName(JumpTarget(op, address));
 #endif
 	sprintf(str, "J         0x%08x        %s", JumpTarget(op, address), p_name );
@@ -584,7 +588,7 @@ void SprintOp_J( char * str, u32 address, OpCode op )
 void SprintOp_JAL( char * str, u32 address, OpCode op )
 {
 	const char * p_name( "?" );
-#ifdef DAEDALUS_ENABLE_OS_HOOKS
+#ifdef NAME_OS_FUNCTIONS
 	p_name = Patch_GetJumpAddressName(JumpTarget(op, address));
 #endif
 	sprintf(str, "JAL       0x%08x        %s", JumpTarget(op, address), p_name );
@@ -1151,6 +1155,4 @@ void SprintRSPOpCodeInfo(char *str, u32 address, OpCode op)
 {
 	SprintRSPOp_Instructions[ op.op ]( str, address, op );
 }
-
-#endif // DAEDALUS_SILENT
 

@@ -164,6 +164,7 @@ bool	CPU_RequestLoadState( const char * filename );
 void	CPU_Halt( const char * reason );
 void	CPU_SelectCore();
 u32		CPU_GetVideoInterruptEventCount();
+u32		CPU_GetVerticalInterruptCount();		// N64 vertical interrupts since the ROM started
 void	CPU_SetVideoInterruptEventCount( u32 count );
 void	CPU_DynarecEnable();
 void	R4300_CALL_TYPE CPU_InvalidateICacheRange( u32 address, u32 length );

@@ -42,6 +42,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Utility/Profiler.h"
 #include "Utility/AuxFunc.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 #include <vector>
 
@@ -692,6 +693,7 @@ namespace
 
 void BaseRenderer::PrepareTrisClipped( TempVerts * temp_verts ) const
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	DAEDALUS_PROFILE( "BaseRenderer::PrepareTrisClipped" );
 
 	//
@@ -824,6 +826,7 @@ void BaseRenderer::PrepareTrisClipped( TempVerts * temp_verts ) const
 
 void BaseRenderer::PrepareTrisUnclipped( TempVerts * temp_verts ) const
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	DAEDALUS_PROFILE( "BaseRenderer::PrepareTrisUnclipped" );
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT( mNumIndices > 0, "The number of indices should have been checked" );
@@ -865,6 +868,7 @@ void BaseRenderer::PrepareTrisUnclipped( TempVerts * temp_verts ) const
 #ifdef DAEDALUS_PSP_USE_VFPU
 void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	const FiddledVtx * const pVtxBase( (const FiddledVtx*)(g_pu8RamBase + address) );
 
 	UpdateWorldProject();
@@ -1175,6 +1179,7 @@ void BaseRenderer::SetNewVertexInfo(u32 address, u32 v0, u32 n)
 #ifdef DAEDALUS_PSP_USE_VFPU
 void BaseRenderer::SetNewVertexInfoConker(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	const FiddledVtx * const pVtxBase( (const FiddledVtx*)(g_pu8RamBase + address) );
 	const Matrix4x4 & mat_project {mProjectionMat};
 	const Matrix4x4 & mat_world {mModelViewStack[mModelViewTop]};
@@ -1343,6 +1348,7 @@ void BaseRenderer::SetNewVertexInfoConker(u32 address, u32 v0, u32 n)
 
 void BaseRenderer::SetNewVertexInfoDKR(u32 address, u32 v0, u32 n, bool billboard)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	u32 pVtxBase {u32(g_pu8RamBase + address)};
 	const Matrix4x4 & mat_world_project {mModelViewStack[mDKRMatIdx]};
 
@@ -1458,6 +1464,7 @@ void BaseRenderer::SetNewVertexInfoDKR(u32 address, u32 v0, u32 n, bool billboar
 #ifdef DAEDALUS_PSP_USE_VFPU
 void BaseRenderer::SetNewVertexInfoPD(u32 address, u32 v0, u32 n)
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_VTX );
 	const FiddledVtxPD * const pVtxBase {(const FiddledVtxPD*)(g_pu8RamBase + address)};
 
 	const Matrix4x4 & mat_world {mModelViewStack[mModelViewTop]};
@@ -1707,6 +1714,7 @@ void BaseRenderer::ResetMatrices(u32 size)
 
 void BaseRenderer::UpdateTileSnapshots( u32 tile_idx )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_TEX );
 	UpdateTileSnapshot( 0, tile_idx );
 
 #if defined(DAEDALUS_PSP)
@@ -1970,6 +1978,7 @@ void BaseRenderer::PrepareTexRectUVs(TexCoord * puv0, TexCoord * puv1)
 
 CRefPtr<CNativeTexture> BaseRenderer::LoadTextureDirectly( const TextureInfo & ti )
 {
+	DAEDALUS_PERF_SCOPE( PERF_GFX_TEX );
 	CRefPtr<CNativeTexture> texture = CTextureCache::Get()->GetOrCreateTexture( ti );
 #ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT( texture, "texture is nullptr" );

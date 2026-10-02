@@ -38,6 +38,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "OSHLE/OSTask.h"
 #include "OSHLE/patch.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 bool gDMAUsed {false};
 //*****************************************************************************
@@ -290,6 +291,11 @@ void DMA_PI_CopyToRDRAM()
 			cart_address -= PI_DOM1_ADDR2;
 			CPU_InvalidateICacheRange( 0x80000000 | mem_address, pi_length_reg );
 			RomBuffer::CopyToRam( g_pu8RamBase, mem_address, gRamSize, cart_address, pi_length_reg );
+
+			if( gPerfStatsEnabled )
+			{
+				PerfStats_NotePIDma( Memory_PI_GetRegister(PI_CART_ADDR_REG), mem_address, pi_length_reg, true );
+			}
 
 			OnCopiedRom();
 		}

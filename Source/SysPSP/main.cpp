@@ -183,12 +183,10 @@ static bool	Initialize()
 	if( g32bitColorMode ) pspDebugScreenInit();
 	else pspDebugScreenInitEx( NULL , GU_PSM_5650, 1); //Sets debug output to 16bit mode
 
-// This Breaks gdb, better disable it in debug build
-//
-#ifdef DAEDALUS_DEBUG_CONSOLE
+	// Show a crash screen (and write exception.txt) instead of freezing or quitting to the XMB.
+	// NB: this breaks gdb.
 extern void initExceptionHandler();
 	initExceptionHandler();
-#endif
 
 	_DisableFPUExceptions();
 	VolatileMemInit();
