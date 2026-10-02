@@ -38,6 +38,15 @@ enum ESaveType
 };
 const u32 NUM_SAVE_TYPES = SAVE_TYPE_FLASH + 1;
 
+// How well a game is known to run, shown as a coloured square in the ROM list
+enum ECompatibility
+{
+	COMPAT_UNKNOWN = 0,		// Not rated
+	COMPAT_GOOD,			// Playable or better (green)
+	COMPAT_PARTIAL,			// Runs, but too slow or glitchy to really play (yellow)
+	COMPAT_BROKEN,			// Crashes or hangs (red)
+};
+
 enum EExpansionPakUsage
 {
 	PAK_STATUS_UNKNOWN = 0,
@@ -71,6 +80,13 @@ struct RomSettings
 	bool				FogEnabled;
 	bool                MemoryAccessOptimisation;
 	bool				CheatsEnabled;
+
+	// Set when roms.ini explicitly turns these off for a game (e.g. "DynarecLoopOptimisation=no").
+	// They then stay off whatever the player's settings, as the game is known to break with them.
+	bool				DynarecLoopOptimisationForcedOff;
+	bool				MemoryAccessOptimisationForcedOff;
+
+	ECompatibility		Compatibility;
 
 	RomSettings();
 
