@@ -432,10 +432,17 @@ void UNKNOWN(AudioHLECommand command);
 // ToDo : remove these and use the ones already provided by the core?
 #define dmem	((u8*)g_pMemoryBuffers[MEM_SP_MEM] + SP_DMA_DMEM)
 #define imem	((u8*)g_pMemoryBuffers[MEM_SP_MEM] + SP_DMA_IMEM)
-#define rdram	((u8*)g_pMemoryBuffers[MEM_RD_RAM])
+// RDRAM as seen by the audio code. Normally the cached RDRAM buffer; when an audio
+// list runs on the Media Engine this is the uncached view of the same memory, so the
+// ME's writes go straight to RAM instead of being written back later as whole cache
+// lines (which could overwrite game data the main CPU changed in the meantime).
+extern u8 * gAudioRDRAM;
+#define rdram	(gAudioRDRAM)
 
 // Use these functions to interface with the HLE Audio...
 void Audio_Ucode();
+int  Audio_Ucode_ME( int unused );		// Entry point when running on the Media Engine
+void Audio_PrepareForME();				// Call on the main CPU before starting Audio_Ucode_ME
 void Audio_Reset();
 
 #endif // HLEAUDIO_AUDIOHLE_H_

@@ -115,19 +115,48 @@ inline void Audio_Ucode_Detect(OSTask * pTask)
 //*****************************************************************************
 //
 //*****************************************************************************
+u8 * gAudioRDRAM = nullptr;
+
+static void Audio_DetectOnce()
+{
+	// Only detect ABI once per game
+	if ( !bAudioChanged )
+	{
+		bAudioChanged = true;
+		Audio_Ucode_Detect( (OSTask *)(g_pu8SpMemBase + 0x0FC0) );
+	}
+}
+
+static void Audio_ProcessList();
+
 void Audio_Ucode()
+{
+	gAudioRDRAM = (u8 *)g_pMemoryBuffers[MEM_RD_RAM];
+	Audio_DetectOnce();
+	Audio_ProcessList();
+}
+
+// Audio_PrepareForME must have been called on the main CPU first: the ME must not
+// write globals the main CPU also uses, since its cache is written back as whole
+// lines when it finishes.
+int Audio_Ucode_ME( int )
+{
+	Audio_ProcessList();
+	return 0;
+}
+
+void Audio_PrepareForME()
+{
+	gAudioRDRAM = (u8 *)MAKE_UNCACHED_PTR( g_pMemoryBuffers[MEM_RD_RAM] );
+	Audio_DetectOnce();
+}
+
+static void Audio_ProcessList()
 {
 	#ifdef DAEDALUS_PROFILE
 	DAEDALUS_PROFILE( "HLEMain::Audio_Ucode" );
 #endif
 	OSTask * pTask = (OSTask *)(g_pu8SpMemBase + 0x0FC0);
-
-	// Only detect ABI once per game
-	if ( !bAudioChanged )
-	{
-		bAudioChanged = true;
-		Audio_Ucode_Detect( pTask );
-	}
 
 	gAudioHLEState.LoopVal = 0;
 	//memset( gAudioHLEState.Segments, 0, sizeof( gAudioHLEState.Segments ) );

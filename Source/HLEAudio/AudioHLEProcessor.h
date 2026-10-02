@@ -29,7 +29,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Utility/Alignment.h"
 #include "Utility/DaedalusTypes.h"
 
-struct AudioHLEState
+// Cache line aligned (and so padded to whole lines): with asynchronous audio the Media
+// Engine writes this back as whole cache lines, which must not include main CPU data.
+struct __attribute__((aligned(64))) AudioHLEState
 {
 	void	ClearBuffer( u16 addr, u16 count );
 
