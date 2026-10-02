@@ -20,6 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "stdafx.h"
 #include "ROMFileUncompressed.h"
 
+#include <string.h>
+
 
 //*****************************************************************************
 //
@@ -128,12 +130,15 @@ bool	ROMFileUncompressed::ReadChunk( u32 offset, u8 * p_dst, u32 length )
 	// Try and read in data - reset to the specified offset
 	fseek( mFH, offset, SEEK_SET );
 
-	if( fread( p_dst, length, 1, mFH ) != 1 )
+	// The last chunk of a ROM whose size isn't a multiple of the chunk size is a short
+	// read: keep what was read (and byte swap it like the rest), zero the remainder
+	size_t	bytes_read( fread( p_dst, 1, length, mFH ) );
+	if( bytes_read < length )
 	{
-		return false;
+		memset( p_dst + bytes_read, 0, length - bytes_read );
 	}
 
 	// Apply the bytesswapping before returning the buffer
 	CorrectSwap( p_dst, length );
-	return true;
+	return bytes_read == length;
 }
