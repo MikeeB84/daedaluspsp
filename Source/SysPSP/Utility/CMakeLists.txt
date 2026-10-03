@@ -7,6 +7,7 @@ add_library(Utility_PSP OBJECT
                                 FastMemcpyPSP.cpp 
                                 ModulePSP.cpp
                                 PerfStats.cpp
+                                Benchmark.cpp
                                 VolatileMemPSP.cpp              
             )
 

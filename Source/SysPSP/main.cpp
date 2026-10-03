@@ -71,6 +71,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 
 #include <filesystem>
+#include "SysPSP/Utility/Benchmark.h"
 
 #ifdef DAEDALUS_SDL
 #include <SDL2/SDL.h>
@@ -140,6 +141,13 @@ static bool	Initialize()
 #ifdef DAEDALUS_DEBUG_CONSOLE
 extern void initExceptionHandler();
 	initExceptionHandler();
+#else
+	// Benchmark mode needs the crash handler to record a crash and carry on with the next ROM
+	if( Benchmark_IsRequested() )
+	{
+		extern void initExceptionHandler();
+		initExceptionHandler();
+	}
 #endif
 
 	HAVE_DVE = (HAVE_DVE < 0) ? 0 : 1; // 0 == no dvemgr, 1 == dvemgr
@@ -237,6 +245,12 @@ int main(int argc, char* argv[])
 			return 0;
 		}
 #endif
+		// benchmark.ini in the DaedalusX64 folder: run every ROM in turn and log how it runs
+		if( Benchmark_IsRequested() )
+		{
+			Benchmark_Run( argc > 0 ? argv[0] : nullptr );
+		}
+
 		Translate_Init();
 		bool show_splash = true;
 		for(;;)

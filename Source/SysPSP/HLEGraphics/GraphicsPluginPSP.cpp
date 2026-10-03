@@ -39,6 +39,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Core/Memory.h"
 #include "SysPSP/Utility/PerfStats.h"
+#include "SysPSP/Utility/Benchmark.h"
 
 
 extern void battery_warning();
@@ -193,6 +194,7 @@ void CGraphicsPluginImpl::UpdateScreen()
 
 	if( current_origin != last_origin )
 	{
+		Benchmark_NoteFrame();
 		//printf( "Flip (%08x, %08x)\n", current_origin, last_origin );
 		// Display Info also turns on the timing breakdown, perf.txt and dynarec.txt
 		PerfStats_SetEnabled( gGlobalPreferences.DisplayFramerate );
