@@ -675,6 +675,8 @@ namespace
 	u32				gSamplesSinceFlush = 0;
 	std::string		gLoggedGame;
 	bool			gLoggedHeader = false;
+	std::string		gLogSectionNote;		// Extra text for the next game header (the benchmark's ROM file)
+	bool			gDynarecReport = true;
 
 	void Append( const char * line )
 	{
@@ -699,7 +701,8 @@ void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 	{
 		gLoggedHeader = true;
 		gLoggedGame = g_ROM.settings.GameName.c_str();
-		snprintf( line, sizeof( line ), "# %s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes\n", gLoggedGame.c_str() );
+		snprintf( line, sizeof( line ), "# %s%s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes\n", gLoggedGame.c_str(), gLogSectionNote.c_str() );
+		gLogSectionNote.clear();
 		Append( line );
 	}
 
@@ -716,8 +719,22 @@ void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 	if( ++gSamplesSinceFlush >= kFlushEverySamples )
 	{
 		PerfStats_Flush();
-		WriteDynarecReport();
+		if( gDynarecReport )
+		{
+			WriteDynarecReport();
+		}
 	}
+}
+
+void PerfStats_NewLogSection( const char * note )
+{
+	gLoggedHeader = false;
+	gLogSectionNote = std::string( "  (" ) + note + ")";
+}
+
+void PerfStats_SetDynarecReport( bool enabled )
+{
+	gDynarecReport = enabled;
 }
 
 void PerfStats_Flush()

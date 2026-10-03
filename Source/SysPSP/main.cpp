@@ -64,6 +64,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "Utility/Thread.h"
 #include "Utility/Translate.h"
 #include "Utility/Timer.h"
+#include "SysPSP/Benchmark.h"
 
 /* Define to enable Exit Callback */
 // Do not enable this, callbacks don't get along with our exit dialog :p
@@ -426,6 +427,12 @@ int main(int argc, char* argv[])
 			return 0;
 		}
 #endif
+		// benchmark.ini in the DaedalusX64 folder: run every ROM in turn and log how it runs
+		if( Benchmark_IsRequested() )
+		{
+			Benchmark_Run( argc > 0 ? argv[0] : nullptr );
+		}
+
 		//Translate_Init();
 		bool show_splash = true;
 		for(;;)

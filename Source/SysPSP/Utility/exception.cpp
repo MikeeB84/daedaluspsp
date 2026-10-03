@@ -18,6 +18,7 @@
 #include "Utility/PrintOpCode.h"
 #include "Core/Memory.h"
 #include "SysPSP/Utility/PerfStats.h"
+#include "SysPSP/Benchmark.h"
 
 
 PspDebugRegBlock *exception_regs;
@@ -50,13 +51,16 @@ extern bool PSP_IS_SLIM;
 
 static void DumpInformation(PspDebugRegBlock * regs)
 {
-	FILE *fp = fopen("exception.txt", "wt");
+	// In benchmark mode keep the reports of every crash, with the game's name
+	FILE *fp = fopen("exception.txt", Benchmark_IsRunning() ? "at" : "wt");
 	if (fp == nullptr)
 		return;
 
 	const u32 RDRAM_base {(u32)g_pu8RamBase};
 	const u32 RDRAM_end {(u32)g_pu8RamBase + 8 * 1024 * 1024 - 1};
 
+	if( Benchmark_IsRunning() )
+		fprintf(fp, "\n==== %s\n", g_ROM.settings.GameName.c_str());
 	fprintf(fp, "Exception details:\n");
 	{
 		fprintf(fp, "\tException - %s\n", codeTxt[(regs->cause >> 2) & 31]);
@@ -200,6 +204,15 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 
 	pspDebugScreenClear();
 	pspDebugScreenPrintf("\n\n\nGuru meditation!\n\n");
+
+	// Benchmark mode: save the report and carry on with the next ROM without waiting for a button
+	if( Benchmark_IsRunning() )
+	{
+		pspDebugScreenPrintf("Benchmark: saving exception.txt and moving on to the next ROM...\n");
+		DumpInformation(regs);
+		Benchmark_OnCrash();
+	}
+
 	sceKernelDelayThread(1000000);	//Delay to avoid accidental button pressing
 
 #ifndef DAEDALUS_SILENT

@@ -45,6 +45,16 @@ Ratings are matched by the ROM's ID, so they work whatever the file is called. 3
 
 These files are the most useful thing to attach when reporting a slow or broken game.
 
+### Benchmark mode
+
+If a file called `benchmark.ini` is in the DaedalusX64 folder, Daedalus runs every ROM in turn instead of showing the menu (5 minutes each by default) and writes one line per game to `benchmark.txt`: result (OK, froze, no picture, crashed), average FPS, slowest and fastest 10-second stretch, N64 speed, spare PSP time and how busy the CPU and graphics were. Second-by-second details go to `perf.txt`.
+
+- Start and A are pressed every few seconds during the first minute to get past title screens; the figures are measured after that.
+- A game that freezes or never shows a picture is cut short. After a crash it saves `exception.txt` and restarts (or returns to the XMB).
+- Progress is kept in `benchmark_progress.txt`, so after a crash or switching the PSP off, starting it again carries on with the next ROM.
+
+The settings (time per ROM, button time, freeze limits, ROM folders) are in `benchmark.ini`. The benchmark is meant to be installed as a separate folder (for example `PSP/GAME/DaedalusX64Bench`) reading the ROMs from the normal install.
+
 ## Usage
 
 Copy the entire `DaedalusX64` folder to your Memory Stick, into `PSP/GAME`, and put your ROMs in `DaedalusX64/Roms`.

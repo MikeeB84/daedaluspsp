@@ -20,6 +20,7 @@
 #include "Utility/Preferences.h"
 #include "Utility/Stream.h"
 #include "Utility/Synchroniser.h"
+#include "SysPSP/Benchmark.h"
 
 namespace
 {
@@ -423,6 +424,7 @@ void IInputManager::GetState( OSContPad pPad[4] )
 	SwapJoyStick(&pPad[0], &pad);
 
 	pPad[0].button = mpControllerConfig->GetN64ButtonsState( pad.Buttons );
+	pPad[0].button |= gBenchmarkButtons;		// Benchmark mode presses Start / A to get past title screens
 
 	// Synchronise the input - this will overwrite the real pad data when playing back input
 	for(u32 cont = 0; cont < 4; cont++)
