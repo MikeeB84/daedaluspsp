@@ -323,6 +323,7 @@ add_definitions(-D_USE_MATH_DEFINES)
 			ICON_PATH ${PROJECT_SOURCE_DIR}/Source/SysPSP/Resources/eboot_icons/icon0.png
 			BACKGROUND_PATH ${PROJECT_SOURCE_DIR}/Source/SysPSP/Resources/eboot_icons/pic1.png
 			TITLE DaedalusX64
+			MEMSIZE 1	# Request the extra memory of PSP 2000 and later (newer toolchains default to 24MB, too little to start)
 			BUILD_PRX
 			)
 	endif(PSP)

@@ -26,6 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Core/Memory.h"
 #include "Core/ROM.h"
+#include "SysPSP/Utility/PerfStats.h"
 
 static u32				gTicksBetweenVbls = 0;			// How many ticks we want to delay between vertical blanks
 static u32				gTicksPerSecond = 0;			// How many ticks there are per second
@@ -123,6 +124,7 @@ void FramerateLimiter_Limit()
 		if( delay_ticks > 0 )
 		{
 			//printf( "Delay ticks: %d\n", delay_ticks );
+			DAEDALUS_PERF_SCOPE( PERF_LIMITER );
 			ThreadSleepTicks( delay_ticks & 0xFFFF );
 			NTiming::GetPreciseTime(&now);
 		}
