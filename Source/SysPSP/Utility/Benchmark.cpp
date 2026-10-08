@@ -55,6 +55,7 @@ namespace
 
 	// The ROM being run (written by the main thread before it starts)
 	u32					gRomIndex = 0;
+	u32					gAttempt = 0;			// 0 = first run of this ROM, 1 = rerun after the PSP locked up
 	std::string			gRomFile;
 	std::string			gRomName;
 
@@ -294,6 +295,8 @@ namespace
 		s32			Running = -1;		// ROM that was running (if the PSP crashed or was turned off during it)
 		std::string	RunningFile;
 		std::string	RunningName;
+		u32			Attempt = 0;		// Attempt of the running ROM (or, if none was running, of the next one)
+		std::string	ClosingName;		// Set while a finished ROM is being closed
 	};
 
 	SProgress ReadProgress()
@@ -313,19 +316,22 @@ namespace
 			else if( strncmp( line, "running=", 8 ) == 0 )	progress.Running = atoi( line + 8 );
 			else if( strncmp( line, "file=", 5 ) == 0 )		progress.RunningFile = line + 5;
 			else if( strncmp( line, "name=", 5 ) == 0 )		progress.RunningName = line + 5;
+			else if( strncmp( line, "attempt=", 8 ) == 0 )	progress.Attempt = atoi( line + 8 );
+			else if( strncmp( line, "closing=", 8 ) == 0 )	progress.ClosingName = line + 8;
 		}
 		fclose( fh );
 		return progress;
 	}
 
-	void WriteProgress( u32 next, s32 running, const std::string & file, const std::string & name )
+	void WriteProgress( u32 next, s32 running, const std::string & file, const std::string & name, u32 attempt = 0, const std::string & closing = "" )
 	{
 		FILE * fh = fopen( kProgressFile, "w" );
 		if( fh == nullptr )
 		{
 			return;
 		}
-		fprintf( fh, "next=%u\nrunning=%d\nfile=%s\nname=%s\n", (unsigned)next, (int)running, file.c_str(), name.c_str() );
+		fprintf( fh, "next=%u\nrunning=%d\nfile=%s\nname=%s\nattempt=%u\nclosing=%s\n",
+			(unsigned)next, (int)running, file.c_str(), name.c_str(), (unsigned)attempt, closing.c_str() );
 		fclose( fh );
 	}
 
@@ -340,15 +346,32 @@ namespace
 		fclose( fh );
 	}
 
+	// A comment line in benchmark.txt (ignored when the results are read as a table)
+	void AppendNote( const char * what, const std::string & name, const std::string & file )
+	{
+		char line[ 768 ];
+		snprintf( line, sizeof( line ), "# note: %s: %s | %s\n", what, name.empty() ? "?" : name.c_str(),
+			std::filesystem::path( file ).filename().string().c_str() );
+		AppendResult( line );
+	}
+
+	// "OK" on a first run, "OK (retry)" on the rerun after a lock-up
+	std::string Label( const char * result )
+	{
+		return gAttempt > 0 ? std::string( result ) + " (retry)" : std::string( result );
+	}
+
 	void WriteResultsHeader( u32 num_roms )
 	{
-		char line[ 512 ];
+		char line[ 1024 ];
 		snprintf( line, sizeof( line ),
 			"# DaedalusX64 benchmark: %u ROMs, %u s each, Start/A pressed for the first %u s\n"
 			"# Figures are measured after the first %u s (or over the whole run if it stopped earlier).\n"
+			"# A ROM that locks up the PSP (or stops responding) is run once more on a fresh start: \"(retry)\" marks\n"
+			"# that second run, and \"x2\" means it locked up both times.\n"
 			"# fps = average frames per second; slowest / fastest = 10 second stretches; speed = N64 speed (100%% = full speed);\n"
 			"# idle = spare PSP time; cpu / gfx = share of PSP time. Details per second are in perf.txt.\n"
-			"# result       | fps  | slowest | fastest | speed | idle | cpu | gfx | time  | game | file\n",
+			"# result             | fps  | slowest | fastest | speed | idle | cpu | gfx | time  | game | file\n",
 			(unsigned)num_roms, (unsigned)gSettings.Seconds, (unsigned)gSettings.ButtonSeconds, (unsigned)gSettings.ButtonSeconds );
 		AppendResult( line );
 	}
@@ -382,7 +405,7 @@ namespace
 		}
 
 		char line[ 768 ];
-		snprintf( line, sizeof( line ), "%-14s | %-4s | %-7s | %-7s | %-5s | %-4s | %-3s | %-3s | %4us | %s | %s\n",
+		snprintf( line, sizeof( line ), "%-20s | %-4s | %-7s | %-7s | %-5s | %-4s | %-3s | %-3s | %4us | %s | %s\n",
 			result, fps, slowest, fastest, speed, idle, cpu, gfx, (unsigned)run_seconds,
 			name.empty() ? "?" : name.c_str(), FileNameOf( file ).c_str() );
 		AppendResult( line );
@@ -419,8 +442,16 @@ namespace
 			const u64 limit_us = u64( gSettings.Seconds + gSettings.NoPictureSeconds + 60 ) * 1000000;
 			if( gRun.Outcome == OUTCOME_RUNNING && now - gRun.StartUs > limit_us )
 			{
-				WriteResult( "STUCK", gRomName, gRomFile );
-				WriteProgress( gRomIndex + 1, -1, "", "" );
+				if( gAttempt == 0 )
+				{
+					AppendNote( "stopped responding (STUCK), running it once more", gRomName, gRomFile );
+					WriteProgress( gRomIndex, -1, "", "", 1 );
+				}
+				else
+				{
+					WriteResult( "STUCK x2", gRomName, gRomFile );
+					WriteProgress( gRomIndex + 1, -1, "", "" );
+				}
 				Relaunch();
 			}
 		}
@@ -453,7 +484,7 @@ void Benchmark_OnCrash()
 	{
 		return;
 	}
-	WriteResult( "CRASHED", gRomName, gRomFile );
+	WriteResult( Label( "CRASHED" ).c_str(), gRomName, gRomFile );
 	WriteProgress( gRomIndex + 1, -1, "", "" );
 	Relaunch();
 }
@@ -471,13 +502,33 @@ void Benchmark_Run( const char * eboot_path )
 		WriteResultsHeader( roms.size() );
 	}
 
-	// The PSP was turned off or crashed without the crash screen while a ROM was running
+	// The PSP locked up while closing the previous ROM (its result was already saved)
+	if( !progress.ClosingName.empty() )
+	{
+		AppendNote( "the PSP locked up while closing this game (its result is above)", progress.ClosingName, "" );
+		progress.ClosingName.clear();
+		WriteProgress( progress.Next, -1, "", "", progress.Running >= 0 ? 0 : progress.Attempt );
+	}
+
+	// The PSP was turned off or crashed without the crash screen while a ROM was running.
+	// Run that ROM once more on a fresh start; if it locks up again, record it and move on.
+	u32 start_attempt = progress.Running >= 0 ? 0 : progress.Attempt;
 	if( progress.Running >= 0 )
 	{
 		memset( &gRun, 0, sizeof( gRun ) );
-		WriteResult( "CRASHED/OFF", progress.RunningName, progress.RunningFile );
-		progress.Next = progress.Running + 1;
-		WriteProgress( progress.Next, -1, "", "" );
+		if( progress.Attempt == 0 )
+		{
+			AppendNote( "the PSP locked up or was switched off, running it once more", progress.RunningName, progress.RunningFile );
+			progress.Next = progress.Running;
+			start_attempt = 1;
+		}
+		else
+		{
+			WriteResult( "CRASHED/OFF x2", progress.RunningName, progress.RunningFile );
+			progress.Next = progress.Running + 1;
+			start_attempt = 0;
+		}
+		WriteProgress( progress.Next, -1, "", "", start_attempt );
 	}
 
 	if( progress.Next >= roms.size() )
@@ -504,16 +555,17 @@ void Benchmark_Run( const char * eboot_path )
 	for( u32 i = progress.Next; i < roms.size(); ++i )
 	{
 		gRomIndex = i;
+		gAttempt = ( i == progress.Next ) ? start_attempt : 0;
 		gRomFile = roms[ i ];
 		gRomName.clear();
 		gRun.StartUs = 0;
-		WriteProgress( i, i, gRomFile, "" );
+		WriteProgress( i, i, gRomFile, "", gAttempt );
 
 		gGlobalPreferences.DisplayFramerate = true;		// FPS + Timing
 		if( !System_Open( std::filesystem::path( gRomFile ) ) )
 		{
 			memset( &gRun, 0, sizeof( gRun ) );
-			WriteResult( "LOAD FAILED", "", gRomFile );
+			WriteResult( Label( "LOAD FAILED" ).c_str(), "", gRomFile );
 			WriteProgress( i + 1, -1, "", "" );
 			continue;
 		}
@@ -523,7 +575,7 @@ void Benchmark_Run( const char * eboot_path )
 		{
 			gRomName = "(not in roms.ini)";
 		}
-		WriteProgress( i, i, gRomFile, gRomName );
+		WriteProgress( i, i, gRomFile, gRomName, gAttempt );
 		PerfStats_NewLogSection( FileNameOf( gRomFile ).c_str() );
 
 		ResetRun();
@@ -531,8 +583,9 @@ void Benchmark_Run( const char * eboot_path )
 		CPU_Run();
 		CPU_UnregisterVblCallback( BenchmarkVbl, nullptr );
 		gBenchmarkButtons = 0;
-		System_Close();
 
+		// Save the result before closing the ROM: if the PSP locks up while closing a game
+		// that froze, the result is kept (and the lock-up noted on the next start)
 		const char * result = "OK";
 		char froze[ 32 ];
 		switch( gRun.Outcome )
@@ -545,8 +598,11 @@ void Benchmark_Run( const char * eboot_path )
 		case OUTCOME_OK:			result = "OK"; break;
 		default:					result = "STOPPED"; break;		// Left with the pause menu
 		}
-		WriteResult( result, gRomName, gRomFile );
+		WriteResult( Label( result ).c_str(), gRomName, gRomFile );
 		gRun.StartUs = 0;
+		WriteProgress( i + 1, -1, "", "", 0, gRomName );
+
+		System_Close();
 		WriteProgress( i + 1, -1, "", "" );
 	}
 
