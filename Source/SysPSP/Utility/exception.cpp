@@ -19,6 +19,10 @@
 #include "Debug/Dump.h"
 #include "Debug/PrintOpCode.h"
 #include "SysPSP/Utility/Benchmark.h"
+#include "DynaRec/FragmentCache.h"
+#include "DynaRec/mips/CodeBufferInfoPSP.h"
+#include <malloc.h>
+#include <pspsysmem.h>
 
 
 PspDebugRegBlock *exception_regs;
@@ -69,6 +73,38 @@ static void DumpInformation(PspDebugRegBlock * regs)
 		fprintf(fp, "\tStatus    - %08X\n", (u32)regs->status);
 		fprintf(fp, "\tBadVAddr  - %08X\n", (u32)regs->badvaddr);
 		fprintf(fp, "\tRDRAM %08X - %08X\n", (u32)RDRAM_base, (u32)RDRAM_end);
+	}
+
+	// Dynarec code buffers and memory use, and the PSP code around the EPC (as raw words)
+	fprintf(fp, "\nDynarec / memory:\n");
+	{
+		const u32 epc = (u32)regs->epc;
+		SCodeBufferInfoPSP code = {};
+		if( CodeBufferPSP_GetInfo( &code ) )
+		{
+			const u32 main_base = (u32)code.PrimaryBase, second_base = (u32)code.SecondaryBase;
+			fprintf(fp, "\tMain buffer   %08X - %08X, used %u bytes\n", main_base, main_base + code.Size, (unsigned)code.PrimaryUsed);
+			fprintf(fp, "\tSecond buffer %08X - %08X, used %u bytes\n", second_base, second_base + code.Size, (unsigned)code.SecondaryUsed);
+			if( epc >= main_base && epc < main_base + code.Size )
+				fprintf(fp, "\tEPC is in the main buffer at +%u (%s)\n", (unsigned)( epc - main_base ), epc - main_base < code.PrimaryUsed ? "used part" : "UNUSED part");
+			else if( epc >= second_base && epc < second_base + code.Size )
+				fprintf(fp, "\tEPC is in the second buffer at +%u (%s)\n", (unsigned)( epc - second_base ), epc - second_base < code.SecondaryUsed ? "used part" : "UNUSED part");
+			else
+				fprintf(fp, "\tEPC is not in a code buffer\n");
+		}
+		const struct mallinfo heap = mallinfo();
+		fprintf(fp, "\tFragments %u, heap used %u KB, heap free inside the arena %u KB, arena %u KB\n",
+			(unsigned)gFragmentCache.GetCacheSize(), (unsigned)( heap.uordblks / 1024 ), (unsigned)( heap.fordblks / 1024 ), (unsigned)( heap.arena / 1024 ));
+
+		if( ( epc & 3 ) == 0 && epc >= 0x08800000 + 64 && epc < 0x0A000000 - 32 )
+		{
+			fprintf(fp, "\tPSP code around EPC:\n");
+			for( u32 a = epc - 64; a < epc + 32; a += 16 )
+			{
+				const u32 * w = (const u32 *)a;
+				fprintf(fp, "\t%c%08X: %08X %08X %08X %08X\n", ( epc >= a && epc < a + 16 ) ? '*' : ' ', a, w[0], w[1], w[2], w[3]);
+			}
+		}
 	}
 	// output CPU Regs
 	fprintf(fp, "\nCPU registers (PSP): ('*' -> pointing inside RDRAM else ':')\n");

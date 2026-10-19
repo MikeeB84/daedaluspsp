@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "DynaRec/CodeBufferManager.h"
 #include "Utility/MathUtil.h"
 #include "CodeGeneratorPSP.h"
+#include "CodeBufferInfoPSP.h"
 
 #include <psputilsforkernel.h>
 
@@ -141,6 +142,23 @@ private:
 
 //
 
+static const SCodeBuffer *	gpPrimaryBuffer = nullptr;
+static const SCodeBuffer *	gpSecondaryBuffer = nullptr;
+
+bool	CodeBufferPSP_GetInfo( SCodeBufferInfoPSP * info )
+{
+	if( gpPrimaryBuffer == nullptr || gpSecondaryBuffer == nullptr ) return false;
+	info->PrimaryBase = gpPrimaryBuffer->mpBuffer;
+	info->PrimaryUsed = gpPrimaryBuffer->mBufferPtr;
+	info->SecondaryBase = gpSecondaryBuffer->mpBuffer;
+	info->SecondaryUsed = gpSecondaryBuffer->mBufferPtr;
+	info->Size = gpPrimaryBuffer->mBufferSize;
+	return true;
+}
+
+
+//
+
 std::shared_ptr<CCodeBufferManager> CCodeBufferManager::Create()
 {
 	return std::make_shared<CCodeBufferManagerPSP>();
@@ -160,6 +178,8 @@ bool	CCodeBufferManagerPSP::Initialise()
 	mPrimaryBuffer.Initialise( 3 * 1024 * 1024 );
 	mSecondaryBuffer.Initialise( 3 * 1024 * 1024 );
 #endif
+	gpPrimaryBuffer = &mPrimaryBuffer;
+	gpSecondaryBuffer = &mSecondaryBuffer;
 	return true;
 }
 
