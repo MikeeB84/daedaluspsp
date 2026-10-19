@@ -498,7 +498,8 @@ void SRomPreferences::Apply() const
 	gVideoRateMatch             = g_ROM.settings.VideoRateMatch || VideoRateMatch;
 	gFogEnabled                 = g_ROM.settings.FogEnabled || FogEnabled;
 	gCheckTextureHashFrequency  = GetTexureHashFrequencyAsFrames( CheckTextureHashFrequency );
-	gMemoryAccessOptimisation   = g_ROM.settings.MemoryAccessOptimisation || MemoryAccessOptimisation;
+	// "MemoryAccessOptimisation=no" in roms.ini wins: those ROMs pass pointers outside RDRAM to code that was compiled without the address check
+	gMemoryAccessOptimisation   = !g_ROM.settings.MemoryAccessOptimisationOff && ( g_ROM.settings.MemoryAccessOptimisation || MemoryAccessOptimisation );
 	gFrameskipValue             = Frameskip;
 	gZoomX                      = ZoomX;
 	gCheatsEnabled              = g_ROM.settings.CheatsEnabled || CheatsEnabled;

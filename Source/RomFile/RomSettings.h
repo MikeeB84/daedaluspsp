@@ -70,6 +70,7 @@ struct RomSettings
 	bool				VideoRateMatch;
 	bool				FogEnabled;
 	bool                MemoryAccessOptimisation;
+	bool				MemoryAccessOptimisationOff;	// roms.ini says "MemoryAccessOptimisation=no": this ROM crashes with it
 	bool				CheatsEnabled;
 
 	RomSettings();
