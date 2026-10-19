@@ -271,6 +271,12 @@ void CFragmentCache::InsertFragment( CFragment * p_fragment )
 //*************************************************************************************
 //
 //*************************************************************************************
+bool CFragmentCache::IsCodeBufferNearlyFull() const
+{
+	return mpCodeBufferManager != nullptr && mpCodeBufferManager->IsNearlyFull();
+}
+
+
 void CFragmentCache::Clear()
 {
 	DAEDALUS_PERF_SCOPE( PERF_CPU_COMPILE );

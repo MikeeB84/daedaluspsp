@@ -547,9 +547,12 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						gResetFragmentCache = false;
 					}
 
-					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize)
+					// Flush on fragment count, or when the code buffers are nearly full: big games
+					// (e.g. 007 TWINE) fill the buffers long before the count limit is reached
+					const bool code_buffer_full( gFragmentCache.IsCodeBufferNearlyFull() );
+					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize || code_buffer_full )
 					{
-						PerfStats_NoteFlush( FLUSH_CACHE_FULL, 0, 0 );
+						PerfStats_NoteFlush( code_buffer_full ? FLUSH_CODE_BUFFER_FULL : FLUSH_CACHE_FULL, 0, 0 );
 						gFragmentCache.Clear();
 						gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS

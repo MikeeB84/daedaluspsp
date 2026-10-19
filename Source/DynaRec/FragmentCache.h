@@ -91,6 +91,7 @@ public:
 	u32						GetMemoryUsage() const					{ return mMemoryUsage; }
 
 	std::shared_ptr<CCodeBufferManager>	GetCodeBufferManager() const			{ return mpCodeBufferManager; }
+	bool					IsCodeBufferNearlyFull() const;
 
 	bool					ShouldInvalidateOnWrite( u32 address, u32 length ) const;
 

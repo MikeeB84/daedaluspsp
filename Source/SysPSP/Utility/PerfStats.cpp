@@ -634,10 +634,11 @@ namespace
 		gNumCapturedTraces = 0;
 
 		// Flushes
-		fprintf( fh, "Fragment cache flushes: invalidate requests %u, done %u, cache full %u, branch-target table full %u\n",
+		fprintf( fh, "Fragment cache flushes: invalidate requests %u, done %u, cache full %u, branch-target table full %u, code buffer full %u\n",
 			(unsigned)gFlushCounts[ FLUSH_INVALIDATE_REQUEST ], (unsigned)gFlushCounts[ FLUSH_INVALIDATE_DONE ],
-			(unsigned)gFlushCounts[ FLUSH_CACHE_FULL ], (unsigned)gFlushCounts[ FLUSH_HOT_MAP_FULL ] );
-		static const char * const kReasonNames[ NUM_FLUSH_REASONS ] = { "invalidate request", "invalidate done", "cache full", "branch-target table full" };
+			(unsigned)gFlushCounts[ FLUSH_CACHE_FULL ], (unsigned)gFlushCounts[ FLUSH_HOT_MAP_FULL ],
+			(unsigned)gFlushCounts[ FLUSH_CODE_BUFFER_FULL ] );
+		static const char * const kReasonNames[ NUM_FLUSH_REASONS ] = { "invalidate request", "invalidate done", "cache full", "branch-target table full", "code buffer full" };
 		for( u32 i = 0; i < gNumFlushLog; ++i )
 		{
 			fprintf( fh, "  %s", kReasonNames[ gFlushLog[ i ].Reason ] );

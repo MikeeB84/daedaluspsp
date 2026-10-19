@@ -36,6 +36,9 @@ public:
 	virtual	std::shared_ptr<CCodeGenerator>		StartNewBlock() = 0;
 	virtual	u32						FinaliseCurrentBlock() = 0;
 
+	// True when there is not enough room left to safely compile another fragment
+	virtual	bool					IsNearlyFull() const					{ return false; }
+
 public:
 	static	std::shared_ptr<CCodeBufferManager>	Create();
 };

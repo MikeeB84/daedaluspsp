@@ -104,6 +104,7 @@ enum EFlushReason
 	FLUSH_INVALIDATE_DONE,		// ...and the pending flush was carried out
 	FLUSH_CACHE_FULL,			// Too many fragments
 	FLUSH_HOT_MAP_FULL,			// Too many distinct branch targets being counted
+	FLUSH_CODE_BUFFER_FULL,		// Compiled code buffers nearly out of space
 	NUM_FLUSH_REASONS
 };
 void	PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length );
