@@ -11,6 +11,7 @@ of the License, or (at your option) any later version.
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -47,6 +48,7 @@ namespace
 		u32							FreezeSeconds = 30;		// Stop a ROM that shows no new frame for this long
 		u32							NoPictureSeconds = 90;	// Stop a ROM that never shows a frame
 		std::vector< std::string >	RomDirectories;
+		std::vector< std::string >	Only;					// If set, only run ROMs whose file name contains one of these
 	};
 
 	SSettings			gSettings;
@@ -238,6 +240,10 @@ namespace
 				if( dir[ dir.size() - 1 ] != '/' ) dir += '/';
 				gSettings.RomDirectories.push_back( dir );
 			}
+			else if( strcasecmp( key, "Only" ) == 0 && value[ 0 ] != '\0' )
+			{
+				gSettings.Only.push_back( value );
+			}
 		}
 		fclose( fh );
 
@@ -264,6 +270,23 @@ namespace
 			   strcasecmp( ext, ".rom" ) == 0 || strcasecmp( ext, ".bin" ) == 0;
 	}
 
+	bool ContainsNoCase( const std::string & text, const std::string & part )
+	{
+		auto it = std::search( text.begin(), text.end(), part.begin(), part.end(),
+							   []( char a, char b ) { return tolower( (unsigned char)a ) == tolower( (unsigned char)b ); } );
+		return it != text.end();
+	}
+
+	bool IsSelected( const std::string & name )
+	{
+		if( gSettings.Only.empty() ) return true;
+		for( const std::string & part : gSettings.Only )
+		{
+			if( ContainsNoCase( name, part ) ) return true;
+		}
+		return false;
+	}
+
 	bool LessFilename( const std::string & a, const std::string & b )
 	{
 		int c = strcasecmp( FileNameOf( a ).c_str(), FileNameOf( b ).c_str() );
@@ -279,7 +302,7 @@ namespace
 			for( std::filesystem::directory_iterator it( dir, ec ), end; !ec && it != end; it.increment( ec ) )
 			{
 				const std::string name = it->path().filename().string();
-				if( it->is_regular_file( ec ) && IsRomFile( name ) )
+				if( it->is_regular_file( ec ) && IsRomFile( name ) && IsSelected( name ) )
 				{
 					roms.push_back( dir + name );
 				}

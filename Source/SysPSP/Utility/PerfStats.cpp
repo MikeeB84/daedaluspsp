@@ -696,7 +696,7 @@ namespace
 
 void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 {
-	char line[ 200 ];
+	char line[ 512 ];		// Room for the game header with a long ROM file name
 
 	if( !gLoggedHeader || gLoggedGame != g_ROM.settings.GameName )
 	{
