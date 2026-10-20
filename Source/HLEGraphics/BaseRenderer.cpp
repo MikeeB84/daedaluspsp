@@ -579,7 +579,7 @@ void BaseRenderer::FlushTris()
 //improves quality but fails in some games (Rocket Robot/Lego racers)//Corn
 //*****************************************************************************
 // ALIGNED_TYPE(const v4, NDCPlane[6], 16) =
-std::array<const glm::vec4, 6> NDCPlane = 
+alignas(DATA_ALIGN) std::array<const glm::vec4, 6> NDCPlane = 	// The VFPU loads these with lv.q, which needs 16 byte alignment
 {
 	glm::vec4(  0.f,  0.f, -1.f, -1.f ),	// near
 	glm::vec4(  0.f,  0.f,  1.f, -1.f ),	// far
