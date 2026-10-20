@@ -1073,8 +1073,23 @@ CJumpLocation CCodeGeneratorPSP::GenerateExitCode( u32 exit_address, u32 jump_ad
 		//	If the event counter is still positive, just jump directly to the top of our loop
 		//
 		ADDIU( PspReg_A0, PspReg_A0, -s16(num_instructions) );
-		BGTZ( PspReg_A0, mLoopTop, false );
-		SetVar( (u32*)&gCPUState.Events[0].mCount, PspReg_A0 );	// ASSUMES store is done in just a single op.
+
+		// Exits from branch handlers are generated in the second buffer, megabytes away from
+		// mLoopTop, which a branch can't reach (its offset would be silently truncated and it
+		// would land in unused or stale code). Branch over a jump in that case.
+		const s32	loop_offset( GetAssemblyBuffer()->GetJumpLocation().GetOffset( mLoopTop ) );
+		if( loop_offset > -0x20000 && loop_offset < 0x20000 )
+		{
+			BGTZ( PspReg_A0, mLoopTop, false );
+			SetVar( (u32*)&gCPUState.Events[0].mCount, PspReg_A0 );	// ASSUMES store is done in just a single op.
+		}
+		else
+		{
+			CJumpLocation	skip_loop( BLEZ( PspReg_A0, CCodeLabel( nullptr ), false ) );
+			SetVar( (u32*)&gCPUState.Events[0].mCount, PspReg_A0 );	// ASSUMES store is done in just a single op.
+			J( mLoopTop, true );
+			PatchJumpLong( skip_loop, GetAssemblyBuffer()->GetLabel() );
+		}
 
 		FlushAllRegisters( mRegisterCache, true );
 
