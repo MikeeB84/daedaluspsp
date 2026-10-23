@@ -125,7 +125,9 @@ static bool audio_open = false;
 
 
 // Large kAudioBufferSize creates huge delay on sound //Corn
-static const u32	kAudioBufferSize = 1024 * 2; // OSX uses a circular buffer length, 1024 * 1024
+// 4096 samples is ~93ms at 44.1kHz. The PSP audio thread drains 1024 samples at a
+// time, so 2048 ran dry after a single slow frame, which crackled.
+static const u32	kAudioBufferSize = 1024 * 4;
 
 
 class AudioPluginPSP : public CAudioPlugin
@@ -277,8 +279,9 @@ EProcessResult	AudioPluginPSP::ProcessAList()
 					break;
 				}
 
+				Audio_PrepareForME();
 				sceKernelDcacheWritebackInvalidateAll();
-				if(BeginME( mei, (int)&Audio_Ucode, (int)NULL, -1, NULL, -1, NULL) < 0){
+				if(BeginME( mei, (int)&Audio_Ucode_ME, (int)NULL, -1, NULL, -1, NULL) < 0){
 						Audio_Ucode();
 						result = PR_COMPLETED;
 						break;

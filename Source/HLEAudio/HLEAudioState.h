@@ -29,7 +29,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "Base/Types.h"
 
-struct AudioHLEState {
+// Cache line aligned (and so padded to whole lines): with asynchronous audio the Media
+// Engine writes this back as whole cache lines, which must not include main CPU data.
+struct alignas(64) AudioHLEState {
   void ClearBuffer(u16 addr, u16 count);
 
   void EnvMixer(u8 flags, u32 address);

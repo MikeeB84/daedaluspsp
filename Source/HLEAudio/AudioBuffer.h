@@ -51,6 +51,17 @@ private:
 
   const Sample *volatile mReadPtr;
   Sample *volatile mWritePtr;
+
+  // Resampler state carried between AddSamples calls
+  u32 mResamplePos;
+  Sample mLastInput;
+
+  // Fading when the buffer runs dry and when sound resumes (Drain)
+  Sample mLastOutput;
+  u32 mFadeIn;
+  Sample mFadeOutFrom;
+  u32 mFadeOut;
+  bool mStarved;
 };
 
 #endif // HLEAUDIO_AUDIOBUFFER_H_
