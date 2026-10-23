@@ -22,11 +22,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef GRAPHICS_GRAPHICSCONTEXT_H_
 #define GRAPHICS_GRAPHICSCONTEXT_H_
 
-#include "Utility/DaedalusTypes.h"
-#include "Utility/Singleton.h"
+#include "Base/Types.h"
+#include "Base/Singleton.h"
 
 class c32;
-
+extern bool gFullScreenMode;
 // This class basically provides an extra level of security for our
 // multithreaded code. Threads can Grab the CGraphicsContext to prevent
 // other threads from changing/releasing any of the pointers while it is
@@ -47,12 +47,13 @@ public:
 
 	virtual bool IsInitialised() const = 0;
 
-#ifdef DAEDALUS_PSP
-	virtual void SwitchToChosenDisplay() = 0;
-	virtual void SwitchToLcdDisplay() = 0;
-	virtual void StoreSaveScreenData() = 0;
-#endif
+	virtual void SwitchToChosenDisplay() {};
+	virtual void SwitchToLcdDisplay() {};
+	virtual void StoreSaveScreenData() {};
 
+#ifdef DAEDALUS_CTR
+	virtual void ResetVertexBuffer() = 0;
+#endif
 	virtual void ClearAllSurfaces() = 0;
 	virtual void ClearToBlack() = 0;
 	virtual void ClearZBuffer() = 0;

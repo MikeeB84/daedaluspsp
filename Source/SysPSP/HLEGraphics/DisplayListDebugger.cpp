@@ -18,7 +18,8 @@
 
 */
 
-#include "stdafx.h"
+
+#include "Base/Types.h"
 #include "HLEGraphics/DisplayListDebugger.h"
 
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
@@ -39,26 +40,23 @@
 #include "Core/ROM.h"
 #include "Debug/Dump.h"
 
-#include "Utility/IO.h"
-#include "Utility/Preferences.h"
+
+#include "Interface/Preferences.h"
 #include "Utility/Timer.h"
-#include "Utility/Timing.h"
+#include "System/Timing/Timing.h"
 
 #include <set>
 #include <vector>
 #include <algorithm>
 
-#include "Math/Math.h"	// VFPU Math
-#include "Math/MathUtil.h"
+#include "Utility/MathUtil.h"
 
 #include <pspctrl.h>
 #include <pspgu.h>
 
 using std::sort;
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 extern float	TEST_VARX, TEST_VARY;
 extern DebugBlendSettings gDBlend;
 
@@ -66,9 +64,7 @@ extern DebugBlendSettings gDBlend;
 // We should call DLParser_Process(kUnlimitedInstructionCount) when we enter the debugger, and that will return a count. T
 extern u32 gNumInstructionsExecuted;
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 static bool	gDebugDisplayList = false;
 static bool	gSingleStepFrames = false;
 
@@ -98,7 +94,7 @@ bool DLDebugger_Process()
 	// DLParser_Process may set this flag, so check again after execution
 	if(gDebugDisplayList)
 	{
-		CDisplayListDebugger *	debugger = CDisplayListDebugger::Create();
+		auto debugger = CDisplayListDebugger::Create();
 		debugger->Run();
 		delete debugger;
 		gDebugDisplayList = gSingleStepFrames;
@@ -109,9 +105,7 @@ bool DLDebugger_Process()
 	return false;
 }
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 namespace
 {
 	//	const char * const TERMINAL_TOP_LEFT			= "\033[2A\033[2K";
@@ -146,9 +140,7 @@ struct SPspPadState
 	u32		NewButtons;
 };
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 class CDebugMenuOption
 {
 	public:
@@ -185,9 +177,7 @@ void	CDebugMenuOption::UpdateDisplay()
 	mRefreshDisplay = false;
 }
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 class CCombinerExplorerDebugMenuOption : public CDebugMenuOption
 {
 	public:
@@ -195,7 +185,7 @@ class CCombinerExplorerDebugMenuOption : public CDebugMenuOption
 
 		virtual void			Display() const;
 		virtual void			Update( const SPspPadState & pad_state, float elapsed_time );
-		virtual const char *	GetDescription() const									{ return "Combiner Explorer"; }
+		virtual const char * GetDescription() const									{ return "Combiner Explorer"; }
 
 	private:
 				u32				mSelectedIdx;
@@ -220,8 +210,8 @@ void CCombinerExplorerDebugMenuOption::Display() const
 	printf( "   %sSelected for Blend Explorer\n\n", TERMINAL_RED );
 	printf( "%sCombiner States in use:\n", TERMINAL_WHITE );
 
-	u32		idx( 0 );
-	u64		selected_mux( 0 );
+	u32		idx =  0;
+	u64		selected_mux = 0;
 	for(std::set<u64>::const_iterator it = combiner_states.begin(); it != combiner_states.end(); ++it)
 	{
 		u64		state( *it );
@@ -342,9 +332,7 @@ void CCombinerExplorerDebugMenuOption::Update( const SPspPadState & pad_state, f
 	}
 }
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 class CBlendDebugMenuOption : public CDebugMenuOption
 {
 	public:
@@ -502,9 +490,7 @@ void CBlendDebugMenuOption::Update( const SPspPadState & pad_state, float elapse
 	}
 }
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 class CTextureExplorerDebugMenuOption : public CDebugMenuOption
 {
 	public:
@@ -523,7 +509,7 @@ class CTextureExplorerDebugMenuOption : public CDebugMenuOption
 				u32				mScaleFactor;
 				v2				mTextureOffset;
 
-		CRefPtr<CNativeTexture> mCheckerTexture;
+		std::shared_ptr<CNativeTexture> mCheckerTexture;
 
 		std::vector<CTextureCache::STextureInfoSnapshot>	mSnapshot;
 };
@@ -603,7 +589,7 @@ bool CTextureExplorerDebugMenuOption::OverrideDisplay() const
 	if( !mDisplayTexture )
 		return false;
 
-	CRefPtr<CNativeTexture> texture;
+	std::shared_ptr<CNativeTexture> texture;
 	u32 texture_width  = 32;
 	u32 texture_height = 32;
 	if( mSelectedIdx < mSnapshot.size() )
@@ -628,7 +614,7 @@ bool CTextureExplorerDebugMenuOption::OverrideDisplay() const
 	sceGuDisable(GU_ALPHA_TEST);
 	sceGuTexFunc(GU_TFX_REPLACE,GU_TCC_RGBA);
 
-	sceGuSetMatrix( GU_PROJECTION, reinterpret_cast< const ScePspFMatrix4 * >( &gMatrixIdentity ) );
+	sceGuSetMatrix( GU_PROJECTION, reinterpret_cast< const ScePspFMatrix4 * >( glm::value_ptr(identity) ) );
 
 	const f32		screen_width( 480.0f );
 	const f32		screen_height( 272.0f );
@@ -699,18 +685,18 @@ void CTextureExplorerDebugMenuOption::Display() const
 	s32		min_to_show( mSelectedIdx - 16 );
 	s32		max_to_show( mSelectedIdx + 16 );
 
-	if( min_to_show < 0 )
+	if (min_to_show < 0)
 	{
-		s32	num_spare( 0 - min_to_show );
-		max_to_show = Clamp< s32 >( max_to_show + num_spare, 0, mSnapshot.size() - 1 );
+		s32 num_spare = 0 - min_to_show;
+		max_to_show = std::max(0, std::min(max_to_show + num_spare, static_cast<s32>(mSnapshot.size()) - 1));
 		min_to_show = 0;
 	}
 
-	if( max_to_show >= s32( mSnapshot.size() ) )
+	if (max_to_show >= static_cast<s32>(mSnapshot.size()))
 	{
-		s32 num_spare( max_to_show - (mSnapshot.size() - 1) );
-		min_to_show = Clamp< s32 >( min_to_show - num_spare, 0, mSnapshot.size() - 1 );
-		max_to_show = mSnapshot.size() - 1;
+		s32 num_spare = max_to_show - (static_cast<s32>(mSnapshot.size()) - 1);
+		min_to_show = std::max(0, std::min(min_to_show - num_spare, static_cast<s32>(mSnapshot.size()) - 1));
+		max_to_show = static_cast<s32>(mSnapshot.size()) - 1;
 	}
 
 	printf( "   #  LoadAddr (x,y -> w x h, p) fmt/size tmem pal\n" );
@@ -796,9 +782,7 @@ void CTextureExplorerDebugMenuOption::Update( const SPspPadState & pad_state, fl
 
 }
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 class CDisplayListLengthDebugMenuOption : public CDebugMenuOption
 {
 	public:
@@ -860,20 +844,18 @@ void CDisplayListLengthDebugMenuOption::Update( const SPspPadState & pad_state, 
 	mFractionalAdjustment += new_adjustment;
 
 	s32 adjustment = s32( mFractionalAdjustment );
-	if( adjustment != 0 )
-	{
-		s32 new_limit = *mInstructionCountLimit + adjustment;
+		if (adjustment != 0)
+		{
+			s32 new_limit = *mInstructionCountLimit + adjustment;
 
-		*mInstructionCountLimit = u32( Clamp< s32 >( new_limit, 0, mTotalInstructionCount ) );
-		mFractionalAdjustment -= float( adjustment );
+			*mInstructionCountLimit = static_cast<u32>(std::max(0, std::min(new_limit, mTotalInstructionCount)));
+			mFractionalAdjustment -= float(adjustment);
 
-		InvalidateDisplay();
-	}
+			InvalidateDisplay();
+		}
 }
 
-//*****************************************************************************
-//
-//*****************************************************************************
+
 class CDecalOffsetDebugMenuOption : public CDebugMenuOption
 {
 	public:
@@ -911,9 +893,7 @@ void CDecalOffsetDebugMenuOption::Update( const SPspPadState & pad_state, float 
 
 }
 
-//*************************************************************************************
-//
-//*************************************************************************************
+
 class IDisplayListDebugger : public CDisplayListDebugger
 {
 	public:
@@ -923,24 +903,18 @@ class IDisplayListDebugger : public CDisplayListDebugger
 };
 
 
-//*************************************************************************************
-//
-//*************************************************************************************
+
 CDisplayListDebugger *	CDisplayListDebugger::Create()
 {
 	return new IDisplayListDebugger;
 }
 
-//*************************************************************************************
-//
-//*************************************************************************************
+
 CDisplayListDebugger::~CDisplayListDebugger()
 {
 }
 
-//*************************************************************************************
-//
-//*************************************************************************************
+
 void IDisplayListDebugger::Run()
 {
 	//
@@ -962,8 +936,7 @@ void IDisplayListDebugger::Run()
 	float freq_inv = 1.0f / f32( freq );
 
 	CTimer		timer;
-
-	typedef std::vector< CDebugMenuOption * > DebugMenuOptionVector;
+	using DebugMenuOptionVector = std::vector< CDebugMenuOption * >;
 	DebugMenuOptionVector	menu_options;
 
 	u32		total_instruction_count = gNumInstructionsExecuted;
@@ -983,7 +956,7 @@ void IDisplayListDebugger::Run()
 	bool	dump_next_screen( false );
 	bool	dump_texture_dlist( false );
 
-	while( (pad_state.NewButtons & PSP_CTRL_HOME) != 0 || !menu_button_pressed )
+	while( (pad_state.NewButtons & PSP_CTRL_SELECT) != 0 || !menu_button_pressed )
 	{
 		//guSwapBuffersBehaviour( PSP_DISPLAY_SETBUF_IMMEDIATE );
 

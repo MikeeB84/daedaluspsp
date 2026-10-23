@@ -1,179 +1,371 @@
- #CMake File for DaedalusX64
+	# DaedalusX64 CMake Build File 
+# Created and Maintained by Wally 
+# Yes right now this is a mess, hoping to simplify things further in future but please deal with it for now :)
 
-#Build instructions
-# Create a directory in the DaedalusX64 root directory and cd into it 'eg: mkdir tmp ~/DaedalusX64'
-# ensure you have cmake installed
-# For PSP:
-# cmake -DCMAKE_TOOLCHAIN_FILE=../Tools/psptoolchain.cmake ../Source/ -DPSP_OPTION
+set(CMAKE_CXX_STANDARD 23)
 
-#Options
-# PSP_RELEASE - Builds PSP Release
+# Below is related to Macros within the project, a lot of these could be deprecated and deleted.
+# For now they will remain here so they're visible and can be switched on and off as desired.
 
-cmake_minimum_required(VERSION 3.7)
-set(CMAKE_CXX_STANDARD 14)
-project (DaedalusX64)
+#TODO: Separate SDL Options
+list(APPEND plat_main )
 
-				#Default Files for build
-				set (BASE_FILES StdAfx.cpp)
-				set (CONFIG_FILES Config/ConfigOptions.cpp)
-				set (CORE_FILES Core/Cheats.cpp Core/CPU.cpp Core/DMA.cpp Core/Dynamo.cpp Core/FlashMem.cpp Core/Interpret.cpp Core/Interrupts.cpp Core/JpegTask.cpp Core/Memory.cpp Core/PIF.cpp Core/R4300.cpp Core/ROM.cpp Core/ROMBuffer.cpp Core/ROMImage.cpp Core/RomSettings.cpp Core/RSP_HLE.cpp Core/Save.cpp Core/SaveState.cpp Core/TLB.cpp)
-				set (DEBUG_FILES Debug/DebugConsoleImpl.cpp Debug/DebugLog.cpp Debug/Dump.cpp)
-				set (DYNAREC_FILES DynaRec/BranchType.cpp DynaRec/DynaRecProfile.cpp DynaRec/Fragment.cpp DynaRec/FragmentCache.cpp DynaRec/IndirectExitMap.cpp DynaRec/StaticAnalysis.cpp DynaRec/TraceRecorder.cpp)
-				set (GRAPHICS_FILES Graphics/ColourValue.cpp Graphics/PngUtil.cpp Graphics/TextureTransform.cpp)
-				set (HLEAUDIO_FILES HLEAudio/AudioHLEProcessor.cpp HLEAudio/ABI1.cpp HLEAudio/ABI2.cpp HLEAudio/ABI3.cpp HLEAudio/ABI3mp3.cpp HLEAudio/AudioBuffer.cpp HLEAudio/HLEMain.cpp HLEAudio/ABI_ADPCM.cpp HLEAudio/ABI_Buffers.cpp HLEAudio/ABI_Filters.cpp HLEAudio/ABI_MixerInterleave.cpp HLEAudio/ENV_Mixer.cpp HLEAudio/ABI_Resample.cpp)
-				set (HLEGRAPHICS_FILES HLEGraphics/BaseRenderer.cpp HLEGraphics/BaseRenderer.h HLEGraphics/CachedTexture.cpp HLEGraphics/ConvertImage.cpp HLEGraphics/ConvertTile.cpp HLEGraphics/DLDebug.cpp HLEGraphics/DLParser.cpp HLEGraphics/Microcode.cpp HLEGraphics/RDP.cpp  HLEGraphics/RDPStateManager.cpp  HLEGraphics/TextureCache.cpp HLEGraphics/TextureInfo.cpp HLEGraphics/uCodes/Ucode.cpp)
-				set (INTERFACE_FILES Interface/RomDB.cpp)
-				set (MATH_FILES Math/Matrix4x4.cpp)
-				set (OSHLE_FILES OSHLE/OS.cpp OSHLE/patch.cpp)
-				set (PLUGIN_FILES Plugins/GraphicsPlugin.cpp)
-				set (SYSTEM_FILES System/Paths.cpp System/System.cpp)
-				set (TEST_FILES Test/BatchTest.cpp)
-				set (UTILITY_FILES Utility/CRC.cpp Utility/DataSink.cpp Utility/FastMemcpy.cpp  Utility/FramerateLimiter.cpp Utility/Hash.cpp Utility/IniFile.cpp Utility/MemoryHeap.cpp Utility/Preferences.cpp Utility/PrintOpCode.cpp Utility/Profiler.cpp Utility/ROMFile.cpp Utility/ROMFileCache.cpp Utility/ROMFileCompressed.cpp Utility/ROMFileMemory.cpp Utility/ROMFileUncompressed.cpp Utility/Stream.cpp Utility/StringUtil.cpp Utility/Synchroniser.cpp Utility/Timer.cpp  Utility/Translate.cpp Utility/ZLibWrapper.cpp)
-				set (UNKNOWN_FILES Utility/FastMemcpy_test.cpp Utility/MemoryPool.cpp)
-        set (DEBUG_ONLY Core/Registers.cpp)
-				set (BUILD ${BASE_FILES} ${CONFIG_FILES} ${CORE_FILES} ${DEBUG_FILES} ${DYNAREC_FILES} ${GRAPHICS_FILES} ${HLEAUDIO_FILES} ${HLEGRAPHICS_FILES} ${INTERFACE_FILES} ${MATH_FILES} ${OSHLE_FILES} ${PLUGIN_FILES} ${SYSTEM_FILES} ${TEST_FILES} ${UTILITY_FILES})
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    	message(STATUS "GCC detected: ${CMAKE_CXX_COMPILER_VERSION}")
+    
+    	if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0")
+        	message(STATUS "GCC version is older than 13. Using LibFormat.")
+        	message("GCC_LEGACY=ON")
+    		option(GCC_LEGACY "Use LibFormat" ON)
+    	endif()
+endif()
 
 
-				#PSP Build
-				set (PSP_DEBUG_FILES SysPSP/Debug/DaedalusAssertPSP.cpp SysPSP/Debug/DBGConsolePSP.cpp )
-				set (PSP_DVEMGR_FILES SysPSP/PRX/DveMgr/pspDveManager.S)
-				set (PSP_DYNAREC_FILES SysPSP/DynaRec/AssemblyWriterPSP.cpp SysPSP/DynaRec/AssemblyUtilsPSP.cpp SysPSP/DynaRec/CodeBufferManagerPSP.cpp SysPSP/DynaRec/CodeGeneratorPSP.cpp SysPSP/DynaRec/DynaRecStubs.S SysPSP/DynaRec/N64RegisterCachePSP.cpp)
-				set (PSP_GRAPHICS_FILES SysPSP/Graphics/DrawText.cpp SysPSP/Graphics/GraphicsContext.cpp SysPSP/Graphics/NativeTexturePSP.cpp SysPSP/Graphics/VideoMemoryManager.cpp SysPSP/Graphics/intraFont/intraFont.c SysPSP/Graphics/intraFont/libccc.c)
-				set (PSP_HLEAUDIO_FILES SysPSP/HLEAudio/AudioPluginPSP.cpp)
-				set (PSP_HLEGRAPHICS_FILES SysPSP/HLEGraphics/Blender.cpp SysPSP/HLEGraphics/BlendModes.cpp SysPSP/HLEGraphics/ColourAdjuster.cpp SysPSP/HLEGraphics/ConvertVertices.S SysPSP/HLEGraphics/DisplayListDebugger.cpp SysPSP/HLEGraphics/GraphicsPluginPSP.cpp SysPSP/HLEGraphics/RendererPSP.cpp SysPSP/HLEGraphics/Combiner/BlendConstant.cpp SysPSP/HLEGraphics/Combiner/CombinerExpression.cpp SysPSP/HLEGraphics/Combiner/CombinerTree.cpp SysPSP/HLEGraphics/Combiner/RenderSettings.cpp SysPSP/HLEGraphics/TnLVFPU.S SysPSP/HLEGraphics/VectorClipping.S)
-				set (PSP_INPUTMANAGER_FILES SysPSP/Input/InputManagerPSP.cpp)
-				set (PSP_KERNELBUTTON_FILES SysPSP/PRX/KernelButtons/imposectrl.S)
-                set (PSP_MEDIAENGINEFILES SysPSP/PRX/MediaEngine/me.c SysPSP/PRX/MediaEngine/MediaEngine.S )
-				set (PSP_UI_FILES SysPSP/UI/AboutComponent.cpp SysPSP/UI/AdjustDeadzoneScreen.cpp SysPSP/UI/AdvancedOptionsScreen.cpp SysPSP/UI/CheatOptionsScreen.cpp SysPSP/UI/ColourPulser.cpp SysPSP/UI/Dialogs.cpp SysPSP/UI/GlobalSettingsComponent.cpp SysPSP/UI/MainMenuScreen.cpp SysPSP/UI/PauseOptionsComponent.cpp SysPSP/UI/PauseScreen.cpp SysPSP/UI/RomPreferencesScreen.cpp SysPSP/UI/RomSelectorComponent.cpp SysPSP/UI/SavestateSelectorComponent.cpp SysPSP/UI/SelectedRomComponent.cpp SysPSP/UI/SplashScreen.cpp SysPSP/UI/UICommand.cpp SysPSP/UI/UIComponent.cpp SysPSP/UI/UIContext.cpp SysPSP/UI/UIElement.cpp SysPSP/UI/UIScreen.cpp SysPSP/UI/UISetting.cpp)
-				set (PSP_UTILITY_FILES SysPSP/Utility/AtomicPrimitives.S SysPSP/Utility/BatteryPSP.cpp SysPSP/Utility/Buttons.cpp SysPSP/Utility/DebugMemory.cpp SysPSP/Utility/DisableFPUExceptions.S SysPSP/Utility/exception.cpp SysPSP/Utility/FastMemcpyPSP.cpp SysPSP/Utility/IOPSP.cpp SysPSP/Utility/JobManager.cpp SysPSP/Utility/ModulePSP.cpp SysPSP/Utility/PerfStats.cpp SysPSP/Benchmark.cpp SysPSP/Utility/ThreadPSP.cpp SysPSP/Utility/TimingPSP.cpp SysPSP/Utility/VolatileMemPSP.cpp)
-				set (GPROF_SRCS SysPSP/Debug/prof.c SysPSP/Debug/mcount.S )
-				set (PSP_MAIN_FILES SysPSP/main.cpp)
+## if DEBUG is added to the build_daedalus script it will execute teh Debug section otherwise by default do release.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+	message("Debug Build")
+
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+	add_compile_definitions(DAEDALUS_CONFIG_VERSION="Dev") ## Show the build type in the UI
+	option(DAEDALUS_ENABLE_ASSERTS "Enable Static Asserts" ON)
+	option(DAEDALUS_DEBUG_CONSOLE "Enable Debug Console" ON)
+	option(DAEDALUS_DEBUG_DISPLAYLIST "Options for debugging the display list, useful for determining texture issues" OFF)
+	option(DAEDALUS_LOG "Enable various logging" ON)
+	option(DAEDALUS_SILENT "Shhh, no debug console message, on by default" OFF)
+if(NOT WIN32)
+	add_compile_options("-Wall")
+	add_compile_options("-Wextra")
+endif()
+else()
+	message("Release Build")
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+	add_compile_definitions(DAEDALUS_CONFIG_VERSION="Release") ## Show the build type in the UI
+	option(DAEDALUS_SILENT "Shhh, no debug console message, on by default" ON)
+
+	option(DAEDALUS_DEBUG_CONSOLE "Enable Debug Console" OFF)
+	message (${CMAKE_CXX_FLAGS_RELEASE})
+	if(DAEDALUS_CTR)
+	set( CMAKE_CXX_FLAGS_RELEASE  "-O3 -DNDEBUG")
+	endif()
+	endif()
+	#Determine Dynarec compatibility and link in appropriate Dynarec
+	#Todo: Move all relevant Dynarec to the Dynarec/arch folder and enable here when correct platform is detected
+	if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64" )
+		option(DAEDALUS_ENABLE_DYNAREC  "Enable Dynarec" OFF)
+		message("No Dynarec on arm64 yet")
+	elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips" )
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" ON)
+		set(DYNAREC DynaRec) #Enable Dynarec Linker Flag
+	elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" OFF)
+		## X86 Dynarec Code needs to be moved from W32 emulator
+	elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv")
+		message("ARM Dynarec Enabled")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" ON)
+		set(DYNAREC DynaRec) #Enable Dynarec Linker Flag
+	elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
+		message("x86_64 Dynarec Enabled")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" ON)
+	elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
+		message("AMD64 Dynarec Enabled")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" ON)
+	elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "riscv64")
+		message("No Dynarec avaliable for Riscv64")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" OFF)
+	elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
+		message("No Dynarec available for arm64")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" OFF)
+	else()
+		message("Platform unknown, Dynarec disabled")
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynarec" OFF)
+	endif()
+	
+	#Check the Endian of the host platform and apply endian rules. 
+	include (TestBigEndian)
+	TEST_BIG_ENDIAN(IS_BIG_ENDIAN)
+	if(IS_BIG_ENDIAN)
+		message(STATUS "Big Endian Detected")
+		option(DAEDALUS_ENDIAN_BIG "Big Endian Processor" ON)
+	else()
+		message(STATUS "Little Endian Detected")
+		option(DAEDALUS_ENDIAN_LITTLE "Litle Endian Processor" ON)
+	endif()
+
+	# General options
+
+	option(DAEDALUS_BATCH_TEST_ENABLED "Enable batch testing for compatibility" OFF)
+
+	option(DAEDALUS_COMPRESSED_ROM_SUPPORT "Enable Compressed ROM Support" OFF) ## Probably should be a default option. 
+	option(DAEDALUS_LOG "Log stuff " OFF) ## NEeds to be off on the PSP unless debugging
+
+	# Additional Debug Options
+	option(SHOW_MEM "Show memory usage" OFF)
+	option(DAEDALUS_DEBUG_MEMORY "Debug memory issues" OFF)
+	option(DAEDALUS_DEBUG_PIF "Enable Debugging Options for Peripheral Interface (PIF)" OFF)
+	option(DAEDALUS_DEBUG_DYNAREC "Enable Various Debugging options for the Dynarec" OFF)
+	option(LOG_ABORTED_TRACES "Log aborted DynaRec Traces to file" OFF)
+	option(DAEDALUS_ENABLE_SYNCHRONISATION "Enable for sync testing" OFF)
+	option(DAEDALUS_ENABLE_PROFILING "Enable built in profiler" OFF)
+	option(DAEDALUS_PROFILE_EXECUTION "Keep track of various execution stats" OFF)
+	option(DUMPOSFUNCTIONS "Dump OSHLE Functions" OFF)
+	option(DAEDALUS_FRAMERATE_ANALYSIS "Output a CSV file containing framerate analysis" OFF)
+	option(DAEDALUS_DEBUG_AUDIO "Output some Audio Samples to raw file" OFF)
 
 
-				set (PSP_BUILD ${PSP_DEBUG_FILES} ${PSP_DVEMGR_FILES} ${PSP_DYNAREC_FILES} ${PSP_GRAPHICS_FILES} ${PSP_HLEAUDIO_FILES} ${PSP_HLEGRAPHICS_FILES} ${PSP_INPUTMANAGER_FILES} ${PSP_KERNELBUTTON_FILES} ${PSP_MEDIAENGINEFILES} ${PSP_UI_FILES} ${PSP_UTILITY_FILES})
-				Set(PSPSDK_LIBS -lpspdebug -lpspdisplay -lpspge -lpspctrl -lpspaudiolib)
+	# Handle specific options (These were all found in platforms.h and now belong here)
+	# PSP / Vita / CTR options are required as non-linux embedded platforms are not able to be reliably detected.
+	# Windows, Linux and macOS builds are auto detected.
 
 
-				#Handle .S files - Probably a better way to do this
-				set_property(SOURCE SysPSP/HLEGraphics/ConvertVertices.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/DynaRec/DynaRecStubs.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/HLEGraphics/TnLVFPU.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/HLEGraphics/VectorClipping.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/Utility/AtomicPrimitives.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/Utility/DisableFPUExceptions.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/Debug/mcount.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/PRX/DveMgr/pspDveManager.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/PRX/KernelButtons/imposectrl.S PROPERTY LANGUAGE C)
-				set_property(SOURCE SysPSP/PRX/MediaEngine/MediaEngine.S PROPERTY LANGUAGE C)
+	if(PSP) 
+		message("PSP")
+		option(DAEDALUS_DIALOGS "Enable UI Dialogs" OFF)
+		option(DAEDALUS_ENABLE_DYNAREC "Enable Dynamic Recompilation, Disable if system not supported" ON)
+		option(DAEDALUS_PSP "PSP specific Options" ON)
+		option(DAEDALUS_PSP_USE_ME "Use the Media Engine" ON)
+		option(DAEDALUS_PSP_USE_VFPU "Enable VFPU Instructions" ON)
+		option(DAEDALUS_SIM_DOUBLES "Simulate Doubles" ON)
+		option(INTRAFONT "Use Native Fonts" ON) #If this is off, SDL will be enabled
+		option(DAEDALUS_SDL "Enable SDL" OFF)
+		option(DAEDALUS_ENABLE_OS_HOOKS "Enable High Level Emulation Hooks" ON) 
+
+	elseif(UNIX)
+		if ((${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64" AND CMAKE_SYSTEM_NAME STREQUAL "Linux") OR (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "armv" AND CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+			option(DAEDALUS_GLES "OpenGLES 3.1 Renderer" ON)
+		else()
+		option(DAEDALUS_GL "OpenGL Renderer" ON)
+		endif()
+		option(DAEDALUS_SDL "SDL Build" ON)
+		option(DAEDALUS_POSIX "Posix specific options" ON)
+		option(DAEDALUS_ACCURATE_TMEM "Accurate TMEM" ON)
+		option(DAEDALUS_128BIT_MULT "128 Bit Multiplication, not supported on PSP" ON)
+		option(DAEDALUS_ACCURATE_CVT "Convert using the rounding mode specified in the Floating Control/Status register (FCSR)" ON)
+
+		
+
+	elseif(WIN32)
+		option(DAEDALUS_SDL "SDL Build" ON)
+		option(DAED_USE_VIRTUAL_ALLOC "Use Windows Memory specifiers" ON) # We probably need to remove and simplfy this using modern C++
+		option(DAEDALUS_ACCURATE_CVT "Convert using the rounding mode specified in the Floating Control/Status register (FCSR)" ON)
+		option(DAEDALUS_W32 "Windows specific Options" ON)
+		option(DAEDALUS_ACCURATE_TMEM "Accurate TMEM" ON)
+		option(DAEDALUS_BREAKPOINTS_ENABLED "Enable Breakpoints" OFF)
+		option(DAEDALUS_GL "OpenGL Renderer" ON)
+		enable_language(CXX ASM_MASM)
+	elseif(CTR)
+		option(DAEDALUS_ENABLE_OS_HOOKS "Enable High Level Emulation Hooks" OFF) ## Causes some weird black screen issues
+		option(DAEDALUS_CTR "3DS Specific Options" ON)
+	endif()
+
+# Profiler Options
+
+	option(DAEDALUS_PROFILE_AUDIOPLUGIN "" OFF)
+	option(DAEDALUS_PROFILE_CORE "" OFF)
+	option(DAEDALUS_PROFILE_DEBUG "" OFF)
+	option(DAEDALUS_PROFILE_DYNAREC "" OFF)
+	option(DAEDALUS_PROFILE_GRAPHICS "" OFF)
+	option(DAEDALUS_PROFILE_HLEAUDIO "" OFF)
+	option(DAEDALUS_PROFILE_HLEGRAPHICS "" OFF)
+	option(DAEDALUS_PROFILE_INPUT "" OFF)
+	option(DAEDALUS_PROFILE_INTERFACE "" OFF)
+	option(DAEDALUS_PROFILE_OSHLE "" OFF)
+	option(DAEDALUS_PROFILE_ROMFILE "" OFF)
+	option(DAEDALUS_PROFILE_SYSTEM "" OFF)
+	option(DAEDALUS_PROFILE_UI "" OFF)
+	option(DAEDALUS_PROFILE_UTILITY "" OFF)
+
+	option(DAEDALUS_PROFILE_UTILITY_PSP "" OFF)
+	option(DAEDALUS_PROFILE_HLEGRAPHICS_PSP "" OFF)
+	option(DAEDALUS_PROFILE_GRAPHICS_PSP "" OFF )
+	option(DAEDALUS_PROFILE_DEBUG_PSP "" OFF)
+
+	option(DAEDALUS_PROFILE_GRAPHICS_CTR "" OFF)
+	option(DAEDALUS_PROFILE_HLEGRAPHICS_CTR "" OFF)
+	option(DAEDALUS_PROFILE_UTILITY_CTR "" OFF)
+	option(DAEDALUS_PROFILE_UI_CTR "" OFF)
+
+	option(DAEDALUS_PROFILE_GRAPHICS_GL "" OFF)
+	option(DAEDALUS_PROFILE_UTILITY_POSIX "" OFF)
+
+	if(DAEDALUS_GPROF)
+	link_libraries(-pg)
+	endif()
+
+	# Needed below the options to post process
+	include(${PROJECT_SOURCE_DIR}/Options.cmake) 
+
+	#Setup directories to include
+	list(APPEND include_dirs "${PROJECT_SOURCE_DIR}/Source")
+	include_directories( BEFORE ${include_dirs})
 
 
-				#SysGL
-				set (SYSGL_GRAPHICS SysGL/Graphics/GraphicsContextGL.cpp SysGL/Graphics/NativeTextureGL.cpp)
-				set (SYSGL_HLEGRAPHICS SysGL/HLEGraphics/GraphicsPluginGL.cpp SysGL/HLEGraphics/RendererGL.cpp)
-				set (SYSGL_INPUT SysGL/Input/InputManagerGL.cpp)
-				set (SYSGL_INTERFACE SysGL/Interface/UI.cpp)
-				set (SYSGL_BUILD ${SYSGL_GRAPHICS} ${SYSGL_HLEGRAPHICS} ${SYSGL_INPUT} ${SYSGL_INTERFACE} ${PLUGIN_FILES})
+if(UNIX)
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+if(NOT APPLE)
+	add_link_options("-Wl,-z,noexecstack")
+endif()
+endif(UNIX)
 
-				#Windows -- Not sure if it works yet
-				set (WIN_AUDIO SysW32/HLEAudio/AudioPluginW32.cpp)
-				set (WIN_DEBUG SysW32/Debug/DaedalusAssertW32.cpp SysW32/Debug/DebugConsoleW32.cpp)
-				set (WIN_UTILITY SysW32/Utility/IOW32.cpp SysW32/Utility/ThreadW32.cpp SysW32/Utility/TimingW32.cpp)
-				set (WIN_BUILD ${WIN_AUDIO} ${WIN_DEBUG} ${WIN_UTILITY})
-
-        #Posix
-				set (POSIX_DEBUG SysPosix/Debug/DaedalusAssertPosix.cpp SysPosix/Debug/DebugConsolePosix.cpp SysPosix/Debug/WebDebug.cpp SysPosix/Debug/WebDebugTemplate.cpp)
-				set (POSIX_DYNAREC SysPosix/DynaRec/CodeBufferManagerPosix.cpp)
-				set (POSIX_HLEGRAPHICS SysPosix/HLEGraphics/DisplayListDebugger.cpp)
-				set (POSIX_MAIN_FILES SysPosix/main.cpp)
-				set (POSIX_UTILITY SysPosix/Utility/CondPosix.cpp SysPosix/Utility/IOPosix.cpp SysPosix/Utility/ThreadPosix.cpp SysPosix/Utility/TimingPosix.cpp)
-				set (POSIX_BUILD ${POSIX_DEBUG} ${POSIX_DYNAREC} ${POSIX_HLEGRAPHICS} ${POSIX_UTILITY})
-
-				# These will remain separate for now..
-				set (LINUX_AUDIO SysPosix/HLEAudio/AudioPluginLinux.cpp)
-				set (MAC_AUDIO SysPosix/HLEAudio/AudioPluginOSX.cpp)
-
-
-if (PSP_RELEASE)
-	message("PSP Release Build..")
-	add_definitions("-DNDEBUG  -march=allegrex -O2 -msingle-float -mfix-r4000 -Wall ")
-	add_compile_options(-DPSP_LARGE_MEMORY=1 -DPSP_FW_VERSION=661)
-	add_definitions(-DDAEDALUS_PSP)
-	include_directories(${PROJECT_SOURCE_DIR}/Config/Release)
-	add_library(pspkubridge STATIC IMPORTED)
-set_property(TARGET pspkubridge PROPERTY IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/SysPSP/Include/lib/libpspkubridge.a)
-	include_directories(BEFORE ${PROJECT_SOURCE_DIR}/SysPSP/Include)
-	add_library(daedalus STATIC ${BUILD} ${PSP_BUILD} ${DEBUG_ONLY})	# Registers.cpp: register names for exception.txt / dynarec.txt
-	add_executable(daedalus.elf ${PSP_MAIN_FILES})
-	set_target_properties(daedalus.elf PROPERTIES LINK_FLAGS "-specs=${PSPSDK}/lib/prxspecs -Wl,-q,-T${PSPSDK}/lib/linkfile.prx ${PSPSDK}/lib/prxexports.o -L${PSPSDK}/lib -L${PSPDEV}/psp/lib")
-	target_include_directories(daedalus.elf PUBLIC /usr/local/pspdev/psp/sdk/include )
-	target_link_libraries(daedalus.elf daedalus -lpsppower -lpspgu -lpspaudiolib -lpspaudio -lpsprtc -lpng -lz -lpspfpu pspkubridge ${PSPSDK_LIBS})
-endif (PSP_RELEASE)
-
-
-
-#Only difference between PSP Release and Debug is the definitions and Config Dev File - Try and merge
-
-if (PSP_DEBUG)
-	message("PSP Debug Build..")
-	include_directories(${PROJECT_SOURCE_DIR}/Config/Dev)
-	add_definitions("-g -O2 -fno-omit-frame-pointer -G0 -D_DEBUG -MD -Wall")
-	add_compile_options(-DPSP_FW_VERSION=661)
-	add_definitions(-DDAEDALUS_PSP )
-	add_library(pspkubridge STATIC IMPORTED)
-set_property(TARGET pspkubridge PROPERTY IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/SysPSP/Include/lib/libpspkubridge.a)
-	include_directories(BEFORE ${PROJECT_SOURCE_DIR}/SysPSP/Include)
-	add_library(daedalus STATIC ${BUILD} ${PSP_BUILD} ${DEBUG_ONLY})
-	add_executable(daedalus.elf ${PSP_MAIN_FILES})
-	set_target_properties(daedalus.elf PROPERTIES LINK_FLAGS "-specs=${PSPSDK}/lib/prxspecs -Wl,-q,-T${PSPSDK}/lib/linkfile.prx ${PSPSDK}/lib/prxexports.o -L${PSPSDK}/lib -L${PSPDEV}/psp/lib")
-	target_include_directories(daedalus.elf PUBLIC /usr/local/pspdev/psp/sdk/include )
-	target_link_libraries(daedalus.elf daedalus -lpsppower -lpspgu -lpspaudiolib -lpspaudio -lpsprtc -lpng -lz -lpspfpu pspkubridge ${PSPSDK_LIBS})
-endif (PSP_DEBUG)
-
-if (MAC_RELEASE OR LINUX_RELEASE)
-
-add_definitions("-DNDEBUG -O3")
-include_directories(${PROJECT_SOURCE_DIR/HLEGraphics})
-include_directories(${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/Config/Release ${PROJECT_SOURCE_DIR}/SysPosix/Include)
-
-endif (MAC_RELEASE OR LINUX_RELEASE)
-
-if (LINUX_RELEASE)
-
-
-		message("Linux Release Build..")
-
-		#Build SysGL Lib
-		add_library(sysGL STATIC ${SYSGL_BUILD})
-		target_link_libraries(sysGL GL GLEW -lSDL2 dl X11  )
-
-		#Build Daedalus Lib
-		add_library(daedalus.lib STATIC ${BUILD} ${POSIX_BUILD} ${LINUX_AUDIO} )
-	target_link_libraries(daedalus.lib sysGL -lGL  -lSDL2 -lGLEW png z minizip pthread)
-
-		#Build and Link Executable
-			add_executable(daedalus ${POSIX_MAIN_FILES})
-		target_link_libraries(daedalus LINK_PUBLIC daedalus.lib )
-endif (LINUX_RELEASE)
-
-
-if (MAC_RELEASE)
-
-		message("Mac Release Build..")
-FIND_PATH(OPENGL_INCLUDE_DIR gl.h)
-	FIND_LIBRARY(OPENGL_LIBRARY OpenGL)
-		include_directories(/usr/local/include -framework OpenGL)
+if (APPLE)
+	list(APPEND sys_libraries "-framework OpenGL -framework AudioToolbox -framework Cocoa -framework IOKit -framework CoreVideo")
+	## Homebrew uses a separate path on Apple Silicon
+	##Ugh is there a better way??
+	if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64" )
+		include_directories(/opt/homebrew/include)
+		link_directories(/opt/homebrew/lib)
+	else()
+		include_directories(/usr/local/include)
 		link_directories(/usr/local/lib)
+	endif()
+endif (APPLE)
+if(CTR)
+	include_directories($ENV{DEVKITPRO}/portlibs/3ds/include)
+	include_directories($ENV{DEVKITPRO}/picaGL/include)
+	link_directories($ENV{DEVKITPRO}/picaGL/lib)
+	include_directories($ENV{DEVKITPRO}/portlibs/3ds/lib)
+endif(CTR)
 
-    add_definitions("-DDAEDALUS_OSX" -g)
-		#Build SysGL Lib
-		add_library(sysGL STATIC ${SYSGL_BUILD})
-		target_link_libraries(sysGL -lGLEW -lSDL2 -ldl "-framework OpeNGL -framework AudioToolbox -framework Cocoa -framework IOKit -framework CoreVideo"  )
+if(DAEDALUS_SDL)
+	find_package(SDL2 CONFIG REQUIRED)
 
-		#Build Daedalus Lib
-		add_library(daedalus.lib STATIC ${BUILD} ${POSIX_BUILD} ${MAC_AUDIO} )
-	target_link_libraries(daedalus.lib sysGL png z minizip pthread)
+	if(GCC_LEGACY)
+	find_package(fmt REQUIRED)
+	endif(GCC_LEGACY)
 
-		#Build and Link Executable
-			add_executable(daedalus ${POSIX_MAIN_FILES})
-		target_link_libraries(daedalus LINK_PUBLIC daedalus.lib )
-endif (MAC_RELEASE)
+	link_libraries(SDL2::SDL2)
+	link_libraries(${SDL2_LIBRARIES})
+
+	if(NOT PSP)
+		# PSP is not needed as it uses built-in native font
+		find_package(SDL2_ttf QUIET)
+		if(SDL2_ttf_FOUND)
+			link_libraries(SDL2_ttf::SDL2_ttf)
+		else()
+			PKG_SEARCH_MODULE(SDL2_TTF REQUIRED SDL2_ttf>=2.0.0)
+			link_libraries(${SDL2_TTF_LIBRARIES})
+		endif()
+	endif()
+endif(DAEDALUS_SDL)
+
+if(DAEDALUS_GLES)
+	find_package(OpenGL REQUIRED)
+	link_libraries(OpenGL::GL)
+endif(DAEDALUS_GLES)
+
+if(DAEDALUS_GL)
+	find_package(OpenGL REQUIRED)
+	link_libraries(OpenGL::GL)
+
+	find_package(GLEW REQUIRED)
+	link_libraries(GLEW::GLEW)
+endif(DAEDALUS_GL)
+
+find_package(PNG REQUIRED)
+link_libraries(PNG::PNG)
+
+
+find_package(ZLIB REQUIRED)
+link_libraries(ZLIB::ZLIB)
+
+add_definitions(-D_USE_MATH_DEFINES)
+
+	## Daedalus Core Build
+		add_subdirectory(Core)
+		add_subdirectory(Debug)
+		add_subdirectory(DynaRec)
+		add_subdirectory(Graphics)
+		add_subdirectory(HLEAudio)
+		add_subdirectory(HLEGraphics)
+		add_subdirectory(Interface)
+		add_subdirectory(Input)
+		add_subdirectory(OSHLE)
+		add_subdirectory(RomFile)
+		add_subdirectory(System)
+		add_subdirectory(Utility)
+	if(NOT CTR)
+		add_subdirectory(UI)
+	endif()
+	if(UNIX)
+		add_subdirectory(SysPosix)
+		
+		if(DAEDALUS_GL)
+		add_subdirectory(SysGL)
+		endif(DAEDALUS_GL)
+
+		if(DAEDALUS_GLES)
+		add_subdirectory(SysGLES)
+		endif(DAEDALUS_GLES)
+
+	elseif(WIN32) ## Probably keep this generic as we'll build this on Linux too?
+		add_subdirectory(SysGL)
+		add_subdirectory(SysW32)
+	elseif(CTR)
+		add_subdirectory(SysCTR)
+	elseif(PSP)
+		add_subdirectory(SysPSP)
+	endif()
+	
+	# ---  Build ---- 
+	add_executable(daedalus ${plat_main})
+	
+	if(GCC_LEGACY)
+	target_link_libraries(daedalus PRIVATE ${daed_libs} ${default_libraries} ${sys_libraries} fmt::fmt)
+	else()
+	target_link_libraries(daedalus PRIVATE ${daed_libs} ${default_libraries} ${sys_libraries} )
+	endif(GCC_LEGACY)
+	
+	# --- Post Build ---
+	## PRX Builds add about 600kb to the binary as they're not stripped at this point. Maybe we 
+	if(PSP)
+		create_pbp_file(
+			TARGET daedalus
+			PREVIEW_PATH NULL
+			ICON_PATH ${PROJECT_SOURCE_DIR}/Source/SysPSP/Resources/eboot_icons/icon0.png
+			BACKGROUND_PATH ${PROJECT_SOURCE_DIR}/Source/SysPSP/Resources/eboot_icons/pic1.png
+			TITLE DaedalusX64
+			MEMSIZE 1	# Request the extra memory of PSP 2000 and later (newer toolchains default to 24MB, too little to start)
+			BUILD_PRX
+			)
+	endif(PSP)
+
+	if(CTR)
+    set(APP_TITLE "DaedalusX64")
+    set(APP_DESCRIPTION "DaedalusX64 port for 3DS")
+    set(APP_AUTHOR "MasterFeizz / DaedalusX64 Team")
+
+    set(APP_SMDH "${PROJECT_SOURCE_DIR}/Source/SysCTR/Resources/daedalus.smdh")
+    set(APP_BANNER "${PROJECT_SOURCE_DIR}/Source/SysCTR/Resources/banner.bnr")
+    set(APP_AUDIO "${PROJECT_SOURCE_DIR}/Source/SysCTR/Resources/audio_silent.wav")
+    set(APP_RSF "${PROJECT_SOURCE_DIR}/Source/SysCTR/Resources/template.rsf")
+    set(APP_ROMFS_DIR "${PROJECT_SOURCE_DIR}/Source/SysCTR/Resources/romfs")
+    set(APP_ROMFS_BIN "${PROJECT_SOURCE_DIR}/Source/SysCTR/Resources/romfs.bin")
+
+    add_custom_command(
+		TARGET daedalus
+		POST_BUILD COMMAND
+		3dsxtool daedalus.elf DaedalusX64.3dsx --romfs=${APP_ROMFS_DIR} --smdh=${APP_SMDH}
+       COMMENT "Calling 3dsxtool"
+    )
+
+    add_custom_command(
+		TARGET daedalus
+		POST_BUILD COMMAND
+       		makerom -f cia
+            -target t
+            -exefslogo
+            -o ${CMAKE_CURRENT_BINARY_DIR}/DaedalusX64.cia
+            -elf daedalus.elf
+            -rsf ${APP_RSF}
+            -banner ${APP_BANNER}
+            -icon ${APP_SMDH}
+            -romfs ${APP_ROMFS_BIN}
+			COMMENT "Calling makerom"
+    )
+
+endif(CTR)
+	
+	## Install and setup basic directories
+	install(DIRECTORY ${PROJECT_BINARY_DIR}/../Data/ DESTINATION DaedalusX64)
+	install(DIRECTORY DESTINATION DaedalusX64/Roms)
+	install(DIRECTORY DESTINATION DaedalusX64/SaveGames)
+	install(DIRECTORY DESTINATION DaedalusX64/SaveStates)

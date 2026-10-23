@@ -1,19 +1,26 @@
 
-#include "stdafx.h"
+
+#include "Base/Types.h"
 
 #include <stdio.h>
 
 #include "SysGL/GL.h"
+#include <SDL2/SDL_ttf.h>
+#include <iostream>
+
 #include "Graphics/GraphicsContext.h"
 
 #include "Graphics/ColourValue.h"
+#include "UI/DrawText.h"
+
+#include "UI/Menu.h"
+
+SDL_Window * gWindow = nullptr;
+SDL_Renderer * gSdlRenderer = nullptr;
+SDL_GLContext gContext = nullptr;
 
 
-static u32 SCR_WIDTH = 640;
-static u32 SCR_HEIGHT = 480;
-
-// FIXME: This is global to lots of SysGL stuff. Wrap it up elsewhere, and keep this file for the graphics side of things.
-GLFWwindow * gWindow = NULL;
+extern void HandleEndOfFrame();
 
 class GraphicsContextGL : public CGraphicsContext
 {
@@ -36,111 +43,130 @@ public:
 	virtual void GetScreenSize(u32 * width, u32 * height) const;
 	virtual void ViewportType(u32 * width, u32 * height) const;
 
-	virtual void SetDebugScreenTarget( ETargetSurface buffer ) {}
+	virtual void SetDebugScreenTarget( ETargetSurface buffer [[maybe_unused]] ) {}
 	virtual void DumpNextScreen() {}
 	virtual void DumpScreenShot() {}
+	virtual void UItoGL();
 };
 
 template<> bool CSingleton< CGraphicsContext >::Create()
 {
-	DAEDALUS_ASSERT_Q(mpInstance == NULL);
+	DAEDALUS_ASSERT_Q(mpInstance == nullptr);
 
-	mpInstance = new GraphicsContextGL();
+	mpInstance = std::make_shared<GraphicsContextGL>();
 	return mpInstance->Initialise();
 }
 
 
 GraphicsContextGL::~GraphicsContextGL()
 {
-	// glew
-
-	// FIXME: would be better in an separate SysGL file.
-	if (gWindow)
-	{
-		glfwDestroyWindow(gWindow);
-		gWindow = NULL;
-	}
-
-	glfwTerminate();
-}
-
-static void error_callback(int error, const char* description)
-{
-	fprintf(stderr, "Error: %d - %s\n", error, description);
+	SDL_DestroyWindow(gWindow);
+	gWindow = NULL;
+	SDL_Quit();
 }
 
 
 extern bool initgl();
 bool GraphicsContextGL::Initialise()
 {
-	glfwSetErrorCallback(error_callback);
 
-	// Initialise GLFW
-	if( !glfwInit() )
+	//Initialize SDL
+	if( SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER ) < 0 )
 	{
-		fprintf( stderr, "Failed to initialize GLFW\n" );
+		printf( "SDL could not initialize! SDL Error: %s\n", SDL_GetError() );
 		return false;
 	}
 
-	glfwWindowHint(GLFW_SAMPLES, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+	if (TTF_Init() < 0)
+	{
+		printf( "SDL could not initialize TTF Font! SDL Error: %s\n", SDL_GetError() );
+		return false;
+	}
 
-#ifdef DAEDALUS_OSX
-	// OSX 10.7+ only supports 3.2 with core profile/forward compat.
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+
+    // Decide GL+GLSL versions
+
+#if defined(__APPLE__)
+    // GL 3.2 Core + GLSL 150
+    const char* glsl_version = "#version 150";
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+#else
+       // Simplified context creation
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 #endif
 
-	glfwWindowHint(GLFW_DEPTH_BITS, 24);
-	//glfwWindowHint(GLFW_STENCIL_BITS, 0);
+	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-	// Open a window and create its OpenGL context
-	gWindow = glfwCreateWindow( SCR_WIDTH, SCR_HEIGHT,
-								"Daedalus",
-								NULL, NULL );
-	if (!gWindow)
-	{
-		fprintf( stderr, "Failed to open GLFW window\n" );
 
-		glfwTerminate();
-		return false;
-	}
+	//Create window
+	u32 window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
 
-	glfwMakeContextCurrent(gWindow);
+	if (gFullScreenMode)
+{
+	std::cout << "Fullscreen called in GraphicsContextGL" << std::endl;
+	window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+}	
+else
+{
+	window_flags |= SDL_WINDOW_RESIZABLE;
+}
+	gWindow = SDL_CreateWindow( "Daedalus", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, window_flags);
 
-	// Ensure we can capture the escape key being pressed below
-	//glfwEnable( GLFW_STICKY_KEYS );
+	//Create context
+	gContext = SDL_GL_CreateContext( gWindow );
 
-	// Enable vertical sync (on cards that support it)
-	glfwSwapInterval( 1 );
+	SDL_GL_MakeCurrent(gWindow, gContext);
 
-	// Initialise GLEW
-	//glewExperimental = GL_TRUE;
+	SDL_GL_SetSwapInterval(1);
+
 	GLenum err = glewInit();
 	if (err != GLEW_OK || !GLEW_VERSION_3_2)
 	{
-		fprintf( stderr, "Failed to initialize GLEW\n" );
-		glfwDestroyWindow(gWindow);
+		SDL_DestroyWindow(gWindow);
 		gWindow = NULL;
-		glfwTerminate();
+		//SDL_Quit();
 		return false;
 	}
 
-	ClearAllSurfaces();
+	CDrawText::Initialise();
 
-	// This is not valid in GLFW 3.0, and doesn't work with glfwGetWindowAttrib.
-	//if (glfwGetWindowParam(GLFW_FSAA_SAMPLES) != 0)
-	//	fprintf( stderr, "Full Screen Anti-Aliasing 4X has been enabled\n" );
-
-	// FIXME(strmnnrmn): this needs tidying.
+	//ClearColBufferAndDepth(0,0,0,0);
+	UpdateFrame(false);
 	return initgl();
+}
+
+void GraphicsContextGL::UItoGL()
+{
+    if (gSdlRenderer != nullptr)
+    {
+        SDL_RenderPresent(gSdlRenderer);
+        SDL_RenderFlush(gSdlRenderer);
+        SDL_DestroyRenderer(gSdlRenderer);
+        gSdlRenderer = nullptr;
+
+        // If you destroyed the window, re-initialize context
+        if (gWindow)
+        {
+            SDL_DestroyWindow(gWindow);
+            SDL_GL_DeleteContext(gContext);
+            gContext = nullptr;
+            gWindow = nullptr;
+        }
+        GraphicsContextGL::Initialise();
+    }
 }
 
 void GraphicsContextGL::GetScreenSize(u32 * width, u32 * height) const
 {
 	int window_width, window_height;
-	glfwGetFramebufferSize(gWindow, &window_width, &window_height);
+	SDL_GL_GetDrawableSize(gWindow, &window_width, &window_height);
 
 	*width  = window_width;
 	*height = window_height;
@@ -155,6 +181,7 @@ void GraphicsContextGL::ClearAllSurfaces()
 {
 	// FIXME: this should clear/flip a couple of times to ensure the front and backbuffers are cleared.
 	// Not sure if it's necessary...
+	GraphicsContextGL::UItoGL();
 	ClearToBlack();
 }
 
@@ -202,13 +229,20 @@ void GraphicsContextGL::BeginFrame()
 
 void GraphicsContextGL::EndFrame()
 {
+	HandleEndOfFrame();
 }
 
-void GraphicsContextGL::UpdateFrame( bool wait_for_vbl )
+void GraphicsContextGL::UpdateFrame( bool wait_for_vbl [[maybe_unused]] )
 {
-	glfwSwapBuffers(gWindow);
-//	if( gCleanSceneEnabled ) //TODO: This should be optional
-	{
-		ClearColBuffer( c32(0xff000000) ); // ToDo : Use gFillColor instead?
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	if (gSdlRenderer == nullptr) {
+		SDL_GL_SwapWindow(gWindow);
 	}
+
+	
+//	if( gCleanSceneEnabled ) //TODO: This should be optional
+//	{
+	//	ClearColBuffer( c32(0xff000000) ); // ToDo : Use gFillColor instead?
+	//}
 }

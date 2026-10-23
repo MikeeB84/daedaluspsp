@@ -20,14 +20,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef OSHLE_PATCH_H_
 #define OSHLE_PATCH_H_
 
-#include "Core/Registers.h"		// For SRHACK_???? etc
+#include "Debug/Registers.h"		// For SRHACK_???? etc
 #include "Core/CPU.h"		// Breakpoint stuff
-#include "ultra_R4300.h"
+#include "Ultra/ultra_R4300.h"
 
 //#define DUMPOSFUNCTIONS
 
 // Returns return type to determine what kind of post-processing should occur
-typedef u32 (*PatchFunction)();
+using PatchFunction = u32 (*) ();
 
 #define VAR_ADDRESS(name)  (g_##name##_v.Location)
 #define VAR_FOUND(name)  (g_##name##_v.Found)
@@ -97,21 +97,21 @@ typedef struct _PatchVariable
 static PatchCrossRef g_##label##_x[] = {
 
 #define PATCH_XREF_FUNCTION(offset, symbol) \
-	{ offset, PX_JUMP, &g_##symbol##_s, nullptr },
+	{ offset, PX_JUMP, &g_##symbol##_s, NULL },
 
 #define PATCH_XREF_VAR(offsethi, offsetlo, symbol) \
-{ offsethi, PX_VARIABLE_HI, nullptr, &g_##symbol##_v }, \
-{ offsetlo, PX_VARIABLE_LO, nullptr, &g_##symbol##_v },
+{ offsethi, PX_VARIABLE_HI, NULL, &g_##symbol##_v }, \
+{ offsetlo, PX_VARIABLE_LO, NULL, &g_##symbol##_v },
 
 
 #define PATCH_XREF_VAR_LO(offset, symbol) \
-{ offset, PX_VARIABLE_LO, nullptr, &g_##symbol##_v },
+{ offset, PX_VARIABLE_LO, NULL, &g_##symbol##_v },
 
 #define PATCH_XREF_VAR_HI(offset, symbol) \
-{ offset, PX_VARIABLE_HI, nullptr, &g_##symbol##_v },
+{ offset, PX_VARIABLE_HI, NULL, &g_##symbol##_v },
 
 #define END_PATCH_XREFS() \
-	{ static_cast<u32>(~0), PX_JUMP, nullptr, nullptr }		\
+{ static_cast<u32>(~0), PX_JUMP, NULL, NULL }	\
 };
 
 /////////////////////////////////////////////////////////////////
@@ -123,12 +123,12 @@ static PatchSignature	g_##name##_sig[] = {
 { numops, g_##label##_x, Patch_##label, firstop, partial, crc },
 
 #define END_PATCH_SIGNATURE_LIST() \
-{ 0, nullptr, nullptr, 0, 0 }         \
+{ 0, NULL, NULL, 0, 0, 0 }         \
 };
 ///////////////////////////////////////////////////////////////
 
 #define PATCH_SYMBOL_FUNCTION(name) \
-PatchSymbol g_##name##_s = { false, 0, #name, g_##name##_sig, nullptr};
+PatchSymbol g_##name##_s = { false, 0, #name, g_##name##_sig, NULL};
 
 #define PATCH_SYMBOL_VARIABLE(name) \
 PatchVariable g_##name##_v = { false, 0, #name, false, 0, false, 0};
@@ -140,7 +140,7 @@ PatchSymbol * name[] = {
 	&g_##name##_s,
 
 #define END_PATCH_SYMBOL_TABLE() \
-nullptr};
+NULL};
 
 #define PATCH_SYMBOL_FUNCTION_ENTRY(name) g_##name##_s
 
@@ -151,7 +151,7 @@ PatchVariable * name[] = {
 	&g_##name##_v,
 
 #define END_PATCH_VARIABLE_TABLE() \
-nullptr};
+NULL};
 
 #define CALL_PATCHED_FUNCTION(name) g_##name##_s.Function()
 

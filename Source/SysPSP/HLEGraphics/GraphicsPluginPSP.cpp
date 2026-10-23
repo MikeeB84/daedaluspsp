@@ -17,7 +17,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
+
+#include "Base/Types.h"
 
 #include "Debug/DBGConsole.h"
 
@@ -27,40 +28,40 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "HLEGraphics/DisplayListDebugger.h"
 
 #include "Graphics/GraphicsContext.h"
-#include "Plugins/GraphicsPlugin.h"
+#include "HLEGraphics/GraphicsPlugin.h"
 
 #include "Utility/Profiler.h"
 #include "Utility/FramerateLimiter.h"
-#include "Utility/Preferences.h"
-#include "Utility/Timing.h"
+#include "Interface/Preferences.h"
+#include "System/Timing/Timing.h"
 
 #include <pspdebug.h>
 
 #include "Core/Memory.h"
 #include "SysPSP/Utility/PerfStats.h"
+#include "SysPSP/Utility/Benchmark.h"
 
 
-//#define DAEDALUS_FRAMERATE_ANALYSIS
 extern void battery_warning();
 extern void HandleEndOfFrame();
 
 extern bool gFrameskipActive;
 
-u32		gSoundSync {44100};
-u32		gVISyncRate {1500};
-bool	gTakeScreenshot {false};
-bool	gTakeScreenshotSS {false};
+u32		gSoundSync =  44100;
+u32		gVISyncRate = 1500;
+bool	gTakeScreenshot = false;
+bool	gTakeScreenshotSS = false;
 
 EFrameskipValue		gFrameskipValue = FV_DISABLED;
 
 namespace
 {
 	//u32					gVblCount = 0;
-	u32					gFlipCount {};
+	u32					gFlipCount = 0;
 	//float				gCurrentVblrate = 0.0f;
-	float				gCurrentFramerate {0.0f};
-	u64					gLastFramerateCalcTime {};
-	u64					gTicksPerSecond {};
+	float				gCurrentFramerate = 0.0f;
+	u64					gLastFramerateCalcTime = 0;
+	u64					gTicksPerSecond = 0;
 
 #ifdef DAEDALUS_FRAMERATE_ANALYSIS
 	u32					gTotalFrames = 0;
@@ -75,12 +76,12 @@ static void	UpdateFramerate()
 #endif
 	gFlipCount++;
 
-	u64			now {};
+	u64			now = 0;
 	NTiming::GetPreciseTime( &now );
 
 	if(gLastFramerateCalcTime == 0)
 	{
-		u64		freq {};
+		u64		freq = 0;
 		gLastFramerateCalcTime = now;
 
 		NTiming::GetPreciseFrequency( &freq );
@@ -138,6 +139,12 @@ CGraphicsPluginImpl::~CGraphicsPluginImpl()
 {
 }
 
+
+CGraphicsPlugin::~CGraphicsPlugin()
+{
+}
+
+
 bool CGraphicsPluginImpl::Initialise()
 {
 	if(!CreateRenderer())
@@ -182,32 +189,34 @@ void CGraphicsPluginImpl::UpdateScreen()
 {
 	//gVblCount++;
 
-	static u32		last_origin {};
+	static u32		last_origin = 0;
 	u32 current_origin = Memory_VI_GetRegister(VI_ORIGIN_REG);
-	static bool Old_FrameskipActive {false};
-	static bool Older_FrameskipActive {false};
+	static bool Old_FrameskipActive = false;
+	static bool Older_FrameskipActive =false;
 
 	if( current_origin != last_origin )
 	{
+		Benchmark_NoteFrame();
 		Watchdog_NoteFrame();
 		//printf( "Flip (%08x, %08x)\n", current_origin, last_origin );
-		// "FPS + Timing" turns on the profiler (timing lines below, perf.txt and dynarec.txt)
-		const bool show_timing = gGlobalPreferences.DisplayFramerate == 3;
-		PerfStats_SetEnabled( show_timing );
+		// Display Info also turns on the timing breakdown, perf.txt and dynarec.txt
+		PerfStats_SetEnabled( gGlobalPreferences.DisplayFramerate );
 		if( gGlobalPreferences.DisplayFramerate )
-			UpdateFramerate();
-		if( show_timing && PerfStats_Update() )
 		{
-			const u32 tv_hz = FramerateLimiter_GetTvFrequencyHz();
-			PerfStats_LogSample( gCurrentFramerate, u32( FramerateLimiter_GetSync() * f32( tv_hz ) ), tv_hz );
+			UpdateFramerate();
+			if( PerfStats_Update() )
+			{
+				const u32 tv_hz = FramerateLimiter_GetTvFrequencyHz();
+				PerfStats_LogSample( gCurrentFramerate, u32( FramerateLimiter_GetSync() * f32( tv_hz ) ), tv_hz );
+			}
 		}
 
 		const f32 Fsync = FramerateLimiter_GetSync();
 
 		//Calc sync rates for audio and game speed //Corn
-		const f32 inv_Fsync {1.0f / Fsync};
-		gSoundSync = {(u32)(44100.0f * inv_Fsync)};
-		gVISyncRate = {(u32)(1500.0f * inv_Fsync)};
+		const f32 inv_Fsync = 1.0f / Fsync;
+		gSoundSync = (u32)(44100.0f * inv_Fsync);
+		gVISyncRate = (u32)(1500.0f * inv_Fsync);
 		if( gVISyncRate > 4000 ) gVISyncRate = 4000;
 		else if ( gVISyncRate < 1500 ) gVISyncRate = 1500;
 
@@ -219,39 +228,25 @@ void CGraphicsPluginImpl::UpdateScreen()
 				pspDebugScreenSetBackColor(0);
 				pspDebugScreenSetXY(0, 0);
 
-				switch(gGlobalPreferences.DisplayFramerate)
-				{
-					case 1:
-						pspDebugScreenPrintf( "%#.1f  ", gCurrentFramerate );
-						break;
-					case 2:
-						pspDebugScreenPrintf( "FPS[%#.1f] VB[%d/%d] Sync[%#.1f%%]   ", gCurrentFramerate, u32( Fsync * f32( FramerateLimiter_GetTvFrequencyHz() ) ), FramerateLimiter_GetTvFrequencyHz(), Fsync * 100.0f );
-						break;
-					case 3:
-						pspDebugScreenPrintf( "FPS[%#.1f] VB[%d/%d] Sync[%#.1f%%]   ", gCurrentFramerate, u32( Fsync * f32( FramerateLimiter_GetTvFrequencyHz() ) ), FramerateLimiter_GetTvFrequencyHz(), Fsync * 100.0f );
-						pspDebugScreenSetXY(0, 1);
-						pspDebugScreenPrintf( "CPU %2d%% GFX %2d%% AUD %2d%% GE %2d%% IDLE %2d%%   ",
-							(int)PerfStats_GetCpuPercent(), (int)PerfStats_GetGfxPercent(), (int)PerfStats_GetPercent( PERF_AUDIO ),
-							(int)PerfStats_GetPercent( PERF_GE_WAIT ), (int)PerfStats_GetPercent( PERF_LIMITER ) );
-						pspDebugScreenSetXY(0, 2);
-						pspDebugScreenPrintf( "CPU: INT %2d%% DYN %2d%% JIT %2d%% OTH %2d%% TR %d/%d/%d/%d   ",
-							(int)PerfStats_GetPercent( PERF_CPU_INTERP ), (int)PerfStats_GetPercent( PERF_CPU_DYNAREC ),
-							(int)PerfStats_GetPercent( PERF_CPU_COMPILE ), (int)PerfStats_GetPercent( PERF_CPU ),
-							(int)PerfStats_GetCount( PERF_COUNT_TRACE_START ), (int)PerfStats_GetCount( PERF_COUNT_TRACE_ABORT ),
-							(int)PerfStats_GetCount( PERF_COUNT_TRACE_SALVAGED ), (int)PerfStats_GetCount( PERF_COUNT_FRAGMENT ) );
-						pspDebugScreenSetXY(0, 3);
-						pspDebugScreenPrintf( "GFX: DL %2d%% VTX %2d%% TEX %2d%% DRAW %2d%%   ",
-							(int)PerfStats_GetPercent( PERF_GFX ), (int)PerfStats_GetPercent( PERF_GFX_VTX ),
-							(int)PerfStats_GetPercent( PERF_GFX_TEX ), (int)PerfStats_GetPercent( PERF_GFX_DRAW ) );
-						break;
-					case 4:
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-						pspDebugScreenPrintf( "Dlist[%d] Cull[%d] | Tris[%d] Cull[%d] | Rect[%d] Clip[%d] ", gNumInstructionsExecuted, gNumDListsCulled, gRenderer->GetNumTrisRendered(), gRenderer->GetNumTrisClipped(), gRenderer->GetNumRect(), gNumRectsClipped);
+				pspDebugScreenPrintf( "Dlist[%d] Cull[%d] | Tris[%d] Cull[%d] | Rect[%d] Clip[%d] ", gNumInstructionsExecuted, gNumDListsCulled, gRenderer->GetNumTrisRendered(), gRenderer->GetNumTrisClipped(), gRenderer->GetNumRect(), gNumRectsClipped);
 #else
-						pspDebugScreenPrintf( "%#.1f  ", gCurrentFramerate );
+				pspDebugScreenPrintf( "FPS[%#.1f] VB[%d/%d] Sync[%#.1f%%]   ", gCurrentFramerate, u32( Fsync * f32( FramerateLimiter_GetTvFrequencyHz() ) ), FramerateLimiter_GetTvFrequencyHz(), Fsync * 100.0f );
+				pspDebugScreenSetXY(0, 1);
+				pspDebugScreenPrintf( "CPU %2d%% GFX %2d%% AUD %2d%% GE %2d%% IDLE %2d%%   ",
+					(int)PerfStats_GetCpuPercent(), (int)PerfStats_GetGfxPercent(), (int)PerfStats_GetPercent( PERF_AUDIO ),
+					(int)PerfStats_GetPercent( PERF_GE_WAIT ), (int)PerfStats_GetPercent( PERF_LIMITER ) );
+				pspDebugScreenSetXY(0, 2);
+				pspDebugScreenPrintf( "CPU: INT %2d%% DYN %2d%% JIT %2d%% OTH %2d%% TR %d/%d/%d/%d   ",
+					(int)PerfStats_GetPercent( PERF_CPU_INTERP ), (int)PerfStats_GetPercent( PERF_CPU_DYNAREC ),
+					(int)PerfStats_GetPercent( PERF_CPU_COMPILE ), (int)PerfStats_GetPercent( PERF_CPU ),
+					(int)PerfStats_GetCount( PERF_COUNT_TRACE_START ), (int)PerfStats_GetCount( PERF_COUNT_TRACE_ABORT ),
+					(int)PerfStats_GetCount( PERF_COUNT_TRACE_SALVAGED ), (int)PerfStats_GetCount( PERF_COUNT_FRAGMENT ) );
+				pspDebugScreenSetXY(0, 3);
+				pspDebugScreenPrintf( "GFX: DL %2d%% VTX %2d%% TEX %2d%% DRAW %2d%%   ",
+					(int)PerfStats_GetPercent( PERF_GFX ), (int)PerfStats_GetPercent( PERF_GFX_VTX ),
+					(int)PerfStats_GetPercent( PERF_GFX_TEX ), (int)PerfStats_GetPercent( PERF_GFX_DRAW ) );
 #endif
-						break;
-				}
 			}
 			if( gGlobalPreferences.BatteryWarning )
 			{
@@ -267,7 +262,7 @@ void CGraphicsPluginImpl::UpdateScreen()
 			HandleEndOfFrame();
 		}
 
-		static u32 current_frame {};
+		static u32 current_frame = 0;
 		current_frame++;
 
 
@@ -308,16 +303,12 @@ void CGraphicsPluginImpl::RomClosed()
 	DestroyRenderer();
 }
 
-CGraphicsPlugin * CreateGraphicsPlugin()
+class std::unique_ptr<CGraphicsPlugin>	CreateGraphicsPlugin()
 {
-	#ifdef DAEDALUS_DEBUG_CONSOLE
-	DBGConsole_Msg( 0, "Initialising Graphics Plugin [CPSP]" );
-#endif
-
-	CGraphicsPluginImpl * plugin = new CGraphicsPluginImpl;
-	if( !plugin->Initialise() )
+	DBGConsole_Msg( 0, "Initialising PSP Graphics Plugin" );
+	auto plugin = std::make_unique<CGraphicsPluginImpl>();
+	if (!plugin->Initialise())
 	{
-		delete plugin;
 		plugin = nullptr;
 	}
 

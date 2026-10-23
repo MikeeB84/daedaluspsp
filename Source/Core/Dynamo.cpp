@@ -17,20 +17,22 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
-#include "Dynamo.h"
-
-#include <stdio.h>
-
 #include <algorithm>
+#include <fstream>
 
-#include "CPU.h"
-#include "Registers.h"					// For REG_?? defines
-#include "Memory.h"
-#include "Interrupt.h"
-#include "R4300.h"
+#include "Base/Types.h"
+#include "Core/Dynamo.h"
 
-#include "Config/ConfigOptions.h"
+
+
+
+#include "Core/CPU.h"
+			// For REG_?? defines
+#include "Core/Memory.h"
+#include "Core/Interrupt.h"
+#include "Core/R4300.h"
+#include "Debug/Registers.h"		
+#include "Interface/ConfigOptions.h"
 #include "Debug/DBGConsole.h"
 #include "Debug/DebugLog.h"
 #include "DynaRec/DynaRecProfile.h"
@@ -38,13 +40,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "DynaRec/FragmentCache.h"
 #include "DynaRec/TraceRecorder.h"
 #include "OSHLE/patch.h"				// GetCorrectOp
-#include "OSHLE/ultra_R4300.h"
-#include "Utility/IO.h"
-#include "Utility/Macros.h"
+#include "Ultra/ultra_R4300.h"
+
+#include "Base/Macros.h"
 #include "Utility/Profiler.h"
-#include "Utility/Synchroniser.h"
+#include "Debug/Synchroniser.h"
 #include "SysPSP/Utility/PerfStats.h"
-#include <algorithm>
 
 #ifdef DAEDALUS_ENABLE_DYNAREC
 
@@ -60,11 +61,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define TRACE_SIZE 1024
 #endif
 
-static const u32					gMaxFragmentCacheSize {(8192 + 1024)}; //Maximum amount of fragments in the cache
-static const u32					gMaxHotTraceMapSize {(2048 + TRACE_SIZE)};
-static const u32					gHotTraceThreshold {10};	//How many times interpreter has to loop a trace before it becomes hot and sent to dynarec
+static const u32					gMaxFragmentCacheSize = (8192 + 1024); //Maximum amount of fragments in the cache
+static const u32					gMaxHotTraceMapSize = (2048 + TRACE_SIZE);
+static const u32					gHotTraceThreshold = 10;	//How many times interpreter has to loop a trace before it becomes hot and sent to dynarec
 
-//typedef CMemoryPoolAllocator< std::pair< const u32, u32 > > MyAllocator;
+
 //std::map< u32, u32, std::less<u32>, MyAllocator >				gHotTraceCountMap;
 //std::map< u32, u32, std::less<u32>, boost::pool_allocator<std::pair< const u32, u32 > > >				gHotTraceCountMap;
 std::map< u32, u32 >				gHotTraceCountMap {};
@@ -92,7 +93,7 @@ u32 gFragmentLookupSuccess {};
 //	(we have to dump the dynarec contents and start over, but this is
 //	better than crashing :) )
 //*****************************************************************************
-void R4300_CALL_TYPE CPU_InvalidateICache()
+void  CPU_InvalidateICache()
 {
 	PerfStats_NoteFlush( FLUSH_INVALIDATE_REQUEST, 0, 0xFFFFFFFF );
 	CPU_ResetFragmentCache();
@@ -110,7 +111,7 @@ void CPU_DynarecEnable()
 //*****************************************************************************
 // If fragments overlap dynarec has to start all over which is very costly
 //*****************************************************************************
-void R4300_CALL_TYPE CPU_InvalidateICacheRange( u32 address, u32 length )
+void  CPU_InvalidateICacheRange( u32 address, u32 length )
 {
 	if( gFragmentCache.ShouldInvalidateOnWrite( address, length ) )
 	{
@@ -131,10 +132,10 @@ void R4300_CALL_TYPE CPU_InvalidateICacheRange( u32 address, u32 length )
 //	TranslateOp:	Use this to translate breakpoints/patches to original op
 //					before execution.
 //*****************************************************************************
-template< bool TraceEnabled > DAEDALUS_FORCEINLINE void CPU_EXECUTE_OP()
+template< bool TraceEnabled > inline void CPU_EXECUTE_OP()
 {
 
-	u8 * p_Instruction {};
+	u8 * p_Instruction = 0;
 	CPU_FETCH_INSTRUCTION( p_Instruction, gCPUState.CurrentPC );
 	OpCode op_code = *(OpCode*)p_Instruction;
 
@@ -212,8 +213,6 @@ template< bool TraceEnabled > DAEDALUS_FORCEINLINE void CPU_EXECUTE_OP()
 		// Normal operation - just increment the PC
 		INCREMENT_PC();
 		break;
-	default:
-		NODEFAULT;
 	}
 }
 
@@ -302,8 +301,8 @@ template < bool DynaRec, bool TraceEnabled > void CPU_Go()
 
 struct SAddressHitCount
 {
-	u32		Address {};
-	u32		HitCount {};
+	u32		Address = 0;
+	u32		HitCount = 0;
 
 	SAddressHitCount( u32 address, u32 hitcount ) : Address( address ), HitCount( hitcount ) {}
 
@@ -329,10 +328,16 @@ bool SortByHitCount( const SAddressHitCount & a, const SAddressHitCount & b )
 //*****************************************************************************
 void	CPU_DumpFragmentCache()
 {
-	IO::Directory::EnsureExists( "DynarecDump" );
 
-	FILE  * fh( fopen( "DynarecDump/hot_trace_map.html", "w" ) );
-	if( fh != nullptr )
+	std::filesystem::path dynarecDump = setBasePath("DynarecDump");
+	std::filesystem::create_directory(dynarecDump);
+
+	dynarecDump /= "hot_trace_map.html";
+
+	
+	std::ofstream fh(dynarecDump, std::ios::in);
+
+	if (fh.is_open())
 	{
 		std::vector< SAddressHitCount >	hit_counts;
 
@@ -345,14 +350,14 @@ void	CPU_DumpFragmentCache()
 
 		std::sort( hit_counts.begin(), hit_counts.end(), SortByHitCount );
 
-		fputs( "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">", fh );
-		fputs( "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n", fh );
-		fputs( "<head><title>Hot Trace Map</title>\n", fh );
-		fputs( "<link rel=\"stylesheet\" href=\"default.css\" type=\"text/css\" media=\"all\" />\n", fh );
-		fputs( "</head><body>\n", fh );
-		fputs( "<h1>Hot Trace Map</h1>\n", fh );
-		fputs( "<div align=\"center\"><table>\n", fh );
-		fputs( "<tr><th>Address</th><th>Hit Count</th><th>Abort Reason</th></tr>\n", fh );
+		fh <<  "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">";
+		fh <<  "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n";
+		fh <<  "<head><title>Hot Trace Map</title>\n";
+		fh <<  "<link rel=\"stylesheet\" href=\"default.css\" type=\"text/css\" media=\"all\" />\n";
+		fh <<  "</head><body>\n";
+		fh <<  "<h1>Hot Trace Map</h1>\n";
+		fh <<  "<div align=\"center\"><table>\n";
+		fh <<  "<tr><th>Address</th><th>Hit Count</th><th>Abort Reason</th></tr>\n";
 
 		for( u32 i = 0; i < hit_counts.size(); ++i )
 		{
@@ -362,20 +367,19 @@ void	CPU_DumpFragmentCache()
 
 			fprintf( fh, "<tr><td>%08x</td><td>%d</td>\n", info.Address, info.HitCount );
 
-			fputs( "<td>", fh );
-			if(abort_reason & CPU_CHECK_EXCEPTIONS)		{ fputs( " Exception", fh ); }
-			if(abort_reason & CPU_CHECK_INTERRUPTS)		{ fputs( " Interrupt", fh ); }
-			if(abort_reason & CPU_STOP_RUNNING)			{ fputs( " StopRunning", fh ); }
-			if(abort_reason & CPU_CHANGE_CORE)			{ fputs( " ChangeCore", fh ); }
-			fputs( "</td></tr>\n", fh );
+			fh << "<td>";
+			if(abort_reason & CPU_CHECK_EXCEPTIONS)		{ fh <<  " Exception"; }
+			if(abort_reason & CPU_CHECK_INTERRUPTS)		{ fh <<  " Interrupt"; }
+			if(abort_reason & CPU_STOP_RUNNING)			{ fh <<  " StopRunning"; }
+			if(abort_reason & CPU_CHANGE_CORE)			{ fh << " ChangeCore"; }
+			fh << "/td></tr>\n";
 
 			//if( info.HitCount >= gHotTraceThreshold )
 		}
-		fputs( "</table></div>\n", fh );
-		fputs( "</body></html>\n", fh );
+		fh << "</table></div>\n";
+		fh << "</body></html>\n";
 
-		fclose(fh);
-	}
+	}	
 
 	gFragmentCache.DumpStats( "DynarecDump/" );
 }
@@ -397,6 +401,7 @@ void CPU_CreateAndAddFragment()
 		for( u32 i = 0; i < trace_count; ++i ) trace_addresses[ i ] = gTraceRecorder.GetTraceEntryAddress( i );
 	}
 
+	// std::shared_ptr<CFragment> p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 	CFragment * p_fragment( gTraceRecorder.CreateFragment( gFragmentCache.GetCodeBufferManager() ) );
 
 	if( p_fragment != nullptr )
@@ -542,9 +547,12 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 						gResetFragmentCache = false;
 					}
 
-					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize)
+					// Flush on fragment count, or when the code buffers are nearly full: big games
+					// (e.g. 007 TWINE) fill the buffers long before the count limit is reached
+					const bool code_buffer_full( gFragmentCache.IsCodeBufferNearlyFull() );
+					if( gFragmentCache.GetCacheSize() > gMaxFragmentCacheSize || code_buffer_full )
 					{
-						PerfStats_NoteFlush( FLUSH_CACHE_FULL, 0, 0 );
+						PerfStats_NoteFlush( code_buffer_full ? FLUSH_CODE_BUFFER_FULL : FLUSH_CACHE_FULL, 0, 0 );
 						gFragmentCache.Clear();
 						gHotTraceCountMap.clear();		// Makes sense to clear this now, to get accurate usage stats
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
@@ -584,8 +592,7 @@ void CPU_HandleDynaRecOnBranch( bool backwards, bool trace_already_enabled )
 					{
 						if(gAbortedTraceReasons.find( gCPUState.CurrentPC ) != gAbortedTraceReasons.end() )
 						{
-							u32 reason( gAbortedTraceReasons[ gCPUState.CurrentPC ] );
-							use( reason );
+							u32 reason [[maybe_unused]] = gAbortedTraceReasons[ gCPUState.CurrentPC ];
 							//DBGConsole_Msg( 0, "Hot trace at [R%08x] has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.size( ) );
 							DAED_LOG( DEBUG_DYNAREC_CACHE, "Hot trace at %08x has count of %d! (reason is %x) size %d", gCPUState.CurrentPC, trace_count, reason, gHotTraceCountMap.size( ) );
 						}
@@ -650,6 +657,6 @@ void Dynamo_SelectCore()
 
 void CPU_ResetFragmentCache() {}
 void Dynamo_Reset() {}
-void R4300_CALL_TYPE CPU_InvalidateICacheRange( u32 address, u32 length ) {}
+void  CPU_InvalidateICacheRange( u32 address [[maybe_unused]], u32 length [[maybe_unused]] ) {}
 
 #endif //DAEDALUS_ENABLE_DYNAREC

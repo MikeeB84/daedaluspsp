@@ -23,8 +23,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define DYNAREC_ASSEMBLYUTILS_H_
 
 #include <stdlib.h>
+#include <stddef.h>
 
-#include "Utility/DaedalusTypes.h"
+#include "Base/Types.h"
+
 
 class CCodeLabel
 {
@@ -38,8 +40,6 @@ public:
 	bool			IsSet() const				{ return mpLocation != nullptr; }
 	const void *	GetTarget() const			{ return mpLocation; }
 	const u8 *		GetTargetU8P() const		{ return reinterpret_cast< const u8 * >( mpLocation ); }
-	u32				GetTargetU32() const		{ return reinterpret_cast< u32 >( mpLocation ); }
-
 
 
 private:
@@ -56,14 +56,18 @@ public:
 	{
 	}
 
+	bool IsIn32BitRange(const CCodeLabel &label) const
+	{
+		ptrdiff_t difference = label.GetTargetU8P() - GetTargetU8P();
+		return (difference >= INT32_MIN && difference <= INT32_MAX);
+	}
 	bool			IsSet() const				{ return mpLocation != nullptr; }
 	s32				GetOffset( const CCodeLabel & label ) const	{ return label.GetTargetU8P() - GetTargetU8P();	}
 
 	const u8 *		GetTargetU8P() const		{ return reinterpret_cast< const u8 * >( mpLocation ); }
 	u8 *			GetWritableU8P() const
 	{
-		//Todo: PSP
-		return reinterpret_cast< u8 * >( MAKE_UNCACHED_PTR(mpLocation) );
+		return reinterpret_cast< u8 * >( make_uncached_ptr(mpLocation) );
 		//Todo: Check this
 		//return reinterpret_cast< u8 * >( mpLocation );
 	}

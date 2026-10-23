@@ -1,4 +1,5 @@
-#include "stdafx.h"
+
+#include "Base/Types.h"
 
 #include <stdio.h>
 
@@ -13,15 +14,18 @@
 #include "HLEGraphics/DLParser.h"
 #include "HLEGraphics/DisplayListDebugger.h"
 
-#include "Plugins/GraphicsPlugin.h"
+#include "HLEGraphics/GraphicsPlugin.h"
 
-#include "Utility/Timing.h"
+#include "System/Timing/Timing.h"
 
 #include "SysGL/GL.h"
+
+extern SDL_Window * gWindow;
 
 EFrameskipValue     gFrameskipValue = FV_DISABLED;
 u32                 gVISyncRate     = 1500;
 bool                gTakeScreenshot = false;
+bool				gTakeScreenshotSS = false;
 
 namespace
 {
@@ -110,6 +114,12 @@ class CGraphicsPluginImpl : public CGraphicsPlugin
 		u32					LastOrigin;
 };
 
+
+
+CGraphicsPlugin::~CGraphicsPlugin()
+{
+}
+
 CGraphicsPluginImpl::CGraphicsPluginImpl()
 :	LastOrigin( 0 )
 {
@@ -151,6 +161,9 @@ void CGraphicsPluginImpl::ProcessDList()
 #endif
 }
 
+bool ShowFPSonmenu = false;
+
+
 void CGraphicsPluginImpl::UpdateScreen()
 {
 	u32 current_origin = Memory_VI_GetRegister(VI_ORIGIN_REG);
@@ -158,12 +171,6 @@ void CGraphicsPluginImpl::UpdateScreen()
 	if (current_origin != LastOrigin)
 	{
 		UpdateFramerate();
-
-		// FIXME: safe printf
-		char string[22];
-		sprintf(string, "Daedalus | FPS %#.1f", gCurrentFramerate);
-
-		glfwSetWindowTitle(gWindow, string);
 
 		if (gTakeScreenshot)
 		{
@@ -180,22 +187,20 @@ void CGraphicsPluginImpl::UpdateScreen()
 void CGraphicsPluginImpl::RomClosed()
 {
 	DBGConsole_Msg(0, "Finalising GLGraphics");
+
 	DLParser_Finalise();
 	CTextureCache::Destroy();
 	DestroyRenderer();
 }
 
-class CGraphicsPlugin *	CreateGraphicsPlugin()
+class std::unique_ptr<CGraphicsPlugin>	CreateGraphicsPlugin()
 {
 	DBGConsole_Msg( 0, "Initialising Graphics Plugin [CGL]" );
-
-	CGraphicsPluginImpl * plugin = new CGraphicsPluginImpl;
+	auto plugin = std::make_unique<CGraphicsPluginImpl>();
 	if (!plugin->Initialise())
 	{
-		delete plugin;
-		plugin = NULL;
+		plugin = nullptr;
 	}
 
 	return plugin;
 }
-

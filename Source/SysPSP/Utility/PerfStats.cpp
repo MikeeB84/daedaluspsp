@@ -5,19 +5,23 @@ as published by the Free Software Foundation; either version 2
 of the License, or (at your option) any later version.
 */
 
-#include "stdafx.h"
+#include "Base/Types.h"
 #include "SysPSP/Utility/PerfStats.h"
 #include "Core/ROM.h"
 #include "Core/CPU.h"
 #include "Core/Memory.h"
-#include "Core/ROMBuffer.h"
-#include "Utility/PrintOpCode.h"
+#include "Debug/PrintOpCode.h"
+#include "RomFile/ROMBuffer.h"
+#include "DynaRec/FragmentCache.h"
+#include "DynaRec/mips/CodeBufferInfoPSP.h"
 
 #include <algorithm>
 
 #include <pspthreadman.h>
+#include <pspsysmem.h>
 #include <cstdio>
 #include <cstring>
+#include <malloc.h>
 #include <string>
 
 bool gPerfStatsEnabled = false;
@@ -634,10 +638,11 @@ namespace
 		gNumCapturedTraces = 0;
 
 		// Flushes
-		fprintf( fh, "Fragment cache flushes: invalidate requests %u, done %u, cache full %u, branch-target table full %u\n",
+		fprintf( fh, "Fragment cache flushes: invalidate requests %u, done %u, cache full %u, branch-target table full %u, code buffer full %u\n",
 			(unsigned)gFlushCounts[ FLUSH_INVALIDATE_REQUEST ], (unsigned)gFlushCounts[ FLUSH_INVALIDATE_DONE ],
-			(unsigned)gFlushCounts[ FLUSH_CACHE_FULL ], (unsigned)gFlushCounts[ FLUSH_HOT_MAP_FULL ] );
-		static const char * const kReasonNames[ NUM_FLUSH_REASONS ] = { "invalidate request", "invalidate done", "cache full", "branch-target table full" };
+			(unsigned)gFlushCounts[ FLUSH_CACHE_FULL ], (unsigned)gFlushCounts[ FLUSH_HOT_MAP_FULL ],
+			(unsigned)gFlushCounts[ FLUSH_CODE_BUFFER_FULL ] );
+		static const char * const kReasonNames[ NUM_FLUSH_REASONS ] = { "invalidate request", "invalidate done", "cache full", "branch-target table full", "code buffer full" };
 		for( u32 i = 0; i < gNumFlushLog; ++i )
 		{
 			fprintf( fh, "  %s", kReasonNames[ gFlushLog[ i ].Reason ] );
@@ -695,25 +700,33 @@ namespace
 
 void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 {
-	char line[ 200 ];
+	char line[ 512 ];		// Room for the game header with a long ROM file name
 
-	if( !gLoggedHeader || gLoggedGame != g_ROM.settings.GameName.c_str() )
+	if( !gLoggedHeader || gLoggedGame != g_ROM.settings.GameName )
 	{
 		gLoggedHeader = true;
-		gLoggedGame = g_ROM.settings.GameName.c_str();
-		snprintf( line, sizeof( line ), "# %s%s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes\n", gLoggedGame.c_str(), gLogSectionNote.c_str() );
+		gLoggedGame = g_ROM.settings.GameName;
+		snprintf( line, sizeof( line ), "# %s%s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes | code KB: main second | fragments | heap KB used\n", gLoggedGame.c_str(), gLogSectionNote.c_str() );
 		gLogSectionNote.clear();
 		Append( line );
 	}
 
-	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u %u | %u %u %u %u | %u %u %u | %u %u %u %u %u\n",
+	// Code buffer / fragment / heap use, to see what runs out
+	SCodeBufferInfoPSP code = {};
+	CodeBufferPSP_GetInfo( &code );
+	const struct mallinfo heap = mallinfo();
+
+	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u %u | %u %u %u %u | %u %u %u | %u %u %u %u %u | %u %u | %u | %u\n",
 		fps, (unsigned)vbls_per_second, (unsigned)tv_hz,
 		(unsigned)gPercent[ PERF_CPU_INTERP ], (unsigned)gPercent[ PERF_CPU_DYNAREC ], (unsigned)gPercent[ PERF_CPU_COMPILE ], (unsigned)gPercent[ PERF_CPU ],
 		(unsigned)gPercent[ PERF_GFX ], (unsigned)gPercent[ PERF_GFX_VTX ], (unsigned)gPercent[ PERF_GFX_TEX ], (unsigned)gPercent[ PERF_GFX_DRAW ],
 		(unsigned)gPercent[ PERF_AUDIO ], (unsigned)gPercent[ PERF_GE_WAIT ], (unsigned)gPercent[ PERF_LIMITER ],
 		(unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_START ], (unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_ABORT ],
 		(unsigned)gCountsPerSecond[ PERF_COUNT_TRACE_SALVAGED ], (unsigned)gCountsPerSecond[ PERF_COUNT_FRAGMENT ],
-		(unsigned)gCountsPerSecond[ PERF_COUNT_FLUSH ] );
+		(unsigned)gCountsPerSecond[ PERF_COUNT_FLUSH ],
+		(unsigned)( code.PrimaryUsed / 1024 ), (unsigned)( code.SecondaryUsed / 1024 ),
+		(unsigned)gFragmentCache.GetCacheSize(),
+		(unsigned)( heap.uordblks / 1024 ) );
 	Append( line );
 
 	if( ++gSamplesSinceFlush >= kFlushEverySamples )

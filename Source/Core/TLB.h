@@ -19,8 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #pragma once
 
-#include "Utility/Alignment.h"
-#include "Utility/DaedalusTypes.h"
+#include "Base/Types.h"
 
 struct TLBEntry
 {
@@ -45,4 +44,5 @@ public:
 	static u32 Translate(u32 address, bool& missing);
 };
 
-ALIGNED_EXTERN(TLBEntry, g_TLBs[32], CACHE_ALIGN);
+// ALIGNED_EXTERN(TLBEntry, g_TLBs[32], CACHE_ALIGN);
+extern std::array<TLBEntry, 32> g_TLBs;

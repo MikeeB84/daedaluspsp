@@ -17,14 +17,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
-#include "AudioBuffer.h"
+#include "Base/Types.h"
 
-#include "Config/ConfigOptions.h"
+
+#include "Interface/ConfigOptions.h"
 #include "Debug/DBGConsole.h"
-#include "Utility/Thread.h"
+#include "HLEAudio/AudioBuffer.h"
+#include "System/Thread/Thread.h"
+#include <cstring>
+#include <fstream>
 
-#include <string.h>
+#ifdef DAEDALUS_PSP
+#include "SysPSP/Utility/CacheUtil.h"
+#endif
 
 namespace
 {
@@ -70,6 +75,16 @@ void CAudioBuffer::AddSamples(const Sample *samples, u32 num_samples,
   if (num_samples == 0 || frequency == 0 || output_freq == 0)
     return;
 
+#ifdef DAEDALUS_DEBUG_AUDIO
+std::ofstream fh;
+ 
+ if (!fh.is_open())
+ {
+  fh.open("audio_in.raw",  std::ios::binary);
+fh.write(reinterpret_cast<const char*>(samples), sizeof(Sample) * num_samples);
+fh.flush();
+ }
+#endif 
   const Sample *read_ptr(
       mReadPtr); // No need to invalidate, as this is uncached/volatile
   Sample *write_ptr(mWritePtr);

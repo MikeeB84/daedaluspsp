@@ -20,7 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DYNAREC_FRAGMENTCACHE_H_
 #define DYNAREC_FRAGMENTCACHE_H_
 
-#include "Utility/DaedalusTypes.h"
+#include "Base/Types.h"
+
 
 class	CFragment;
 class	CJumpLocation;
@@ -28,11 +29,14 @@ class	CCodeBufferManager;
 
 #include <map>
 #include <vector>
+#include <array>
+#include <memory>
+#include <filesystem>
 
 struct FHashT
 {
 	u32	addr;
-	u32 ptr;
+	uintptr_t ptr;
 };
 
 //*************************************************************************************
@@ -58,7 +62,8 @@ private:
 	static const u32 MEM_USAGE_SHIFT = 12;		// 4k
 	static const u32 NUM_MEM_USAGE_ENTRIES = MEMORY_8_MEG >> MEM_USAGE_SHIFT;
 
-	bool			mCacheCoverage[ NUM_MEM_USAGE_ENTRIES ];
+	std::array<bool, NUM_MEM_USAGE_ENTRIES> mCacheCoverage;
+
 };
 
 //*************************************************************************************
@@ -80,12 +85,13 @@ public:
 	void					Clear();
 
 #ifdef DAEDALUS_DEBUG_DYNAREC
-	void					DumpStats( const char * outputdir ) const;
+	void					DumpStats( const std::filesystem::path outputdir ) const;
 #endif
 
 	u32						GetMemoryUsage() const					{ return mMemoryUsage; }
 
-	CCodeBufferManager *	GetCodeBufferManager() const			{ return mpCodeBufferManager; }
+	std::shared_ptr<CCodeBufferManager>	GetCodeBufferManager() const			{ return mpCodeBufferManager; }
+	bool					IsCodeBufferNearlyFull() const;
 
 	bool					ShouldInvalidateOnWrite( u32 address, u32 length ) const;
 
@@ -106,16 +112,15 @@ private:
 		u32			Address;
 		CFragment *	Fragment;
 	};
+	using FragmentVec = std::vector<SFragmentEntry>;
 
-	typedef std::vector< SFragmentEntry >	FragmentVec;
 	FragmentVec				mFragments;			// Sorted on Address
 
 	u32						mMemoryUsage;
 	u32						mInputLength;
 	u32						mOutputLength;
-
-	typedef std::vector< CJumpLocation >	JumpList;
-	typedef std::map< u32, JumpList >		JumpMap;
+	using JumpList = std::vector< CJumpLocation >;
+	using JumpMap = std::map< u32, JumpList >;
 	JumpMap					mJumpMap;
 
 	mutable u32				mCachedFragmentAddress;
@@ -128,9 +133,10 @@ private:
 	//#define MakeHashIdx( addr ) (((addr >> (2 * HASH_TABLE_BITS + 2)) ^ (addr >> (HASH_TABLE_BITS + 2)) ^ addr >> 2 ) & (HASH_TABLE_SIZE-1))
 	#define MakeHashIdx( addr ) (((addr >> (HASH_TABLE_BITS + 2)) ^ addr >> 2 ) & (HASH_TABLE_SIZE-1))
 
-	mutable FHashT			mpCacheHashTable[HASH_TABLE_SIZE];
+	mutable std::array<FHashT, HASH_TABLE_SIZE> mpCacheHashTable;
+	// mutable FHashT			mpCacheHashTable[HASH_TABLE_SIZE];
 
-	CCodeBufferManager *	mpCodeBufferManager;
+	std::shared_ptr<CCodeBufferManager>	mpCodeBufferManager;
 
 	CFragmentCacheCoverage	mCacheCoverage;
 };

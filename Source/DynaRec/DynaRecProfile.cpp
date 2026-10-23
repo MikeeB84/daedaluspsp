@@ -17,12 +17,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
-#include "DynaRecProfile.h"
 
-#include "Debug/DebugLog.h"
+#include "Base/Types.h"
+
 
 #include "Core/ROM.h"
+#include "Debug/DebugLog.h"
+#include "DynaRec/DynaRecProfile.h"
+
 
 #include <map>
 #include <vector>
@@ -79,7 +81,7 @@ void	CheckForNewFrame()
 
 
 
-		for(int i {}; i < LookupList.size(); ++i)
+		for(int i = 0; i < LookupList.size(); ++i)
 		{
 				DAED_LOG( DEBUG_DYNAREC_PROF, "%08x: %d lookups", LookupList[ i ].Address, LookupList[ i ].Count );
 		}

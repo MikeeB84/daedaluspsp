@@ -18,8 +18,9 @@
 
 */
 
-#include "stdafx.h"
-#include "Debug/DaedalusAssert.h"
+
+#include "Base/Types.h"
+#include "Base/Assert.h"
 
 #ifdef DAEDALUS_ENABLE_ASSERTS
 
@@ -68,7 +69,7 @@ EAssertResult DaedalusAssert( const char * expression, const char * file, unsign
 	EAssertResult	result( AR_IGNORE );
 
 	void * p_base_address( sceGeEdramGetAddr() );
-	void * p_vram_base = MAKE_UNCACHED_PTR(p_base_address);
+	void * p_vram_base = make_uncached_ptr(p_base_address);
 	sceDisplaySetFrameBuf( p_vram_base, PSP_LINE_SIZE, PSP_PIXEL_FORMAT, PSP_DISPLAY_SETBUF_IMMEDIATE );
 	pspDebugScreenSetOffset( 0 );
 

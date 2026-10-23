@@ -21,13 +21,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define CORE_CPU_H_
 
 #include <stdlib.h>
-
-#include "R4300Instruction.h"
-#include "R4300OpCode.h"
-#include "Memory.h"
-#include "TLB.h"
-#include "Utility/SpinLock.h"
-
+#include <stdalign.h>
+#include "Core/Memory.h"
+#include "Core/R4300Instruction.h"
+#include "Core/R4300OpCode.h"
+#include "Core/TLB.h"
+#include "System/SpinLock.h"
+#include "Utility/Paths.h"
 //*****************************************************************************
 //
 //*****************************************************************************
@@ -87,10 +87,9 @@ struct CPUEvent
 DAEDALUS_STATIC_ASSERT( sizeof( CPUEvent ) == 8 );
 #endif
 
-typedef REG64 register_32x64[32];
-typedef REG64 register_16x64[16];
-typedef REG32 register_32x32[32];
-
+using register_32x64 = REG64[32];
+using register_16x64 = REG64[16];
+using register_32x32 = std::array<REG32,32>;
 //
 //	We declare various bits of the CPU state in a struct.
 //	During dynarec compilation we can keep the base address of this
@@ -106,7 +105,7 @@ typedef REG32 register_32x32[32];
 #ifdef USE_SCRATCH_PAD
 struct SCPUState
 #else
-ALIGNED_TYPE(struct, SCPUState, CACHE_ALIGN)
+struct alignas(CACHE_ALIGN) SCPUState
 #endif
 {
 	register_32x64	CPU;				// 0x000 .. 0x100
@@ -130,7 +129,8 @@ ALIGNED_TYPE(struct, SCPUState, CACHE_ALIGN)
 	REG32			Temp3;				// 0x2A8	Temp storage Dynarec
 	REG32			Temp4;				// 0x2AC	Temp storage Dynarec
 
-	CPUEvent		Events[ MAX_CPU_EVENTS ];	// 0x2B0 //In practice there should only ever be 2 CPU_EVENTS
+	std::array<CPUEvent, MAX_CPU_EVENTS> Events;
+	// CPUEvent		Events[ MAX_CPU_EVENTS ];	// 0x2B0 //In practice there should only ever be 2 CPU_EVENTS
 	u32				NumEvents;
 
 	void			AddJob( u32 job );
@@ -147,7 +147,8 @@ ALIGNED_TYPE(struct, SCPUState, CACHE_ALIGN)
 extern SCPUState *gPtrCPUState;
 #define gCPUState (*gPtrCPUState)
 #else	//USE_SCRATCH_PAD
-ALIGNED_EXTERN(SCPUState, gCPUState, CACHE_ALIGN);
+extern struct SCPUState gCPUState;
+// ALIGNED_EXTERN(SCPUState, gCPUState, CACHE_ALIGN);
 #endif //USE_SCRATCH_PAD
 
 #define gGPR (gCPUState.CPU)
@@ -155,20 +156,20 @@ ALIGNED_EXTERN(SCPUState, gCPUState, CACHE_ALIGN);
 //
 //*****************************************************************************
 bool	CPU_RomOpen();
-//void	CPU_RomClose();
+void	CPU_RomClose();
 void	CPU_Step();
 void	CPU_Skip();
 bool	CPU_Run();
-bool	CPU_RequestSaveState( const char * filename );
-bool	CPU_RequestLoadState( const char * filename );
+bool	CPU_RequestSaveState( const std::filesystem::path &filename );
+bool	CPU_RequestLoadState( const std::filesystem::path &filename );
 void	CPU_Halt( const char * reason );
 void	CPU_SelectCore();
 u32		CPU_GetVideoInterruptEventCount();
 u32		CPU_GetVerticalInterruptCount();		// N64 vertical interrupts since the ROM started
 void	CPU_SetVideoInterruptEventCount( u32 count );
 void	CPU_DynarecEnable();
-void	R4300_CALL_TYPE CPU_InvalidateICacheRange( u32 address, u32 length );
-void	R4300_CALL_TYPE CPU_InvalidateICache();
+void	 CPU_InvalidateICacheRange( u32 address, u32 length );
+void	 CPU_InvalidateICache();
 void	CPU_SetCompare(u32 value);
 #ifdef DAEDALUS_BREAKPOINTS_ENABLED
 void	CPU_AddBreakPoint( u32 address );						// Add a break point at address dwAddress
@@ -178,8 +179,8 @@ bool	CPU_IsRunning();
 void	CPU_AddEvent( s32 count, ECPUEventType event_type );
 void	CPU_SkipToNextEvent();
 bool	CPU_CheckStuffToDo();
+using VblCallbackFn = void(*) (void * arg);
 
-typedef void (*VblCallbackFn)(void * arg);
 void CPU_RegisterVblCallback(VblCallbackFn fn, void * arg);
 void CPU_UnregisterVblCallback(VblCallbackFn fn, void * arg);
 
@@ -215,7 +216,7 @@ void	CPU_ExecuteOpRaw( u32 count, u32 address, OpCode op_code, CPU_Instruction p
 // Needs to be callable from assembly
 extern "C"
 {
-	void	R4300_CALL_TYPE CPU_UpdateCounter( u32 ops_executed );
+	void	 CPU_UpdateCounter( u32 ops_executed );
 #ifdef FRAGMENT_SIMULATE_EXECUTION
 	void	CPU_UpdateCounterNoInterrupt( u32 ops_exexuted );
 #endif
@@ -232,7 +233,7 @@ extern	void (* g_pCPUCore)();
 //
 #define CPU_FETCH_INSTRUCTION(ptr, pc)								\
 	const MemFuncRead & m( g_MemoryLookupTableRead[ pc >> 18 ] );	\
-	if( DAEDALUS_EXPECT_LIKELY(m.pRead != nullptr) )					\
+	if((m.pRead != nullptr) )					\
 	{																\
 /* Access through pointer with no function calls at all (Fast) */	\
 		ptr = ( m.pRead + pc );										\

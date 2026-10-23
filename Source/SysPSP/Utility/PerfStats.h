@@ -8,7 +8,7 @@ of the License, or (at your option) any later version.
 #ifndef SYSPSP_UTILITY_PERFSTATS_H_
 #define SYSPSP_UTILITY_PERFSTATS_H_
 
-#include "Utility/DaedalusTypes.h"
+#include "Base/Types.h"
 
 // Lightweight frame time breakdown shown under the FPS counter (and logged to
 // perf.txt) when "Display Framerate" is enabled.
@@ -17,6 +17,8 @@ of the License, or (at your option) any later version.
 // pops a category on a small stack. A timer interrupt samples the top of that
 // stack about 2000 times a second, so the percentages are statistical but the
 // cost of a scope is a few instructions. Scopes nest: the innermost one wins.
+#ifdef DAEDALUS_PSP
+
 enum EPerfCategory
 {
 	PERF_CPU = 0,		// Anything not listed below: event/interrupt handling, dispatch, OS HLE...
@@ -102,6 +104,7 @@ enum EFlushReason
 	FLUSH_INVALIDATE_DONE,		// ...and the pending flush was carried out
 	FLUSH_CACHE_FULL,			// Too many fragments
 	FLUSH_HOT_MAP_FULL,			// Too many distinct branch targets being counted
+	FLUSH_CODE_BUFFER_FULL,		// Compiled code buffers nearly out of space
 	NUM_FLUSH_REASONS
 };
 void	PerfStats_NoteFlush( EFlushReason reason, u32 address, u32 length );
@@ -144,7 +147,6 @@ void	PerfStats_Flush();
 // Start a new game header in perf.txt (with a note, e.g. the ROM file), and turn dynarec.txt on/off
 void	PerfStats_NewLogSection( const char * note );
 void	PerfStats_SetDynarecReport( bool enabled );
-
 // Hang watchdog: a background thread that writes hang.txt if the game stops presenting
 // frames for a few seconds while the CPU is meant to be running.
 extern volatile u32 gWatchdogFrames;
@@ -170,5 +172,20 @@ private:
 };
 
 #define DAEDALUS_PERF_SCOPE( category )		CPerfScope _perf_scope( category )
+
+#else // !DAEDALUS_PSP
+
+// The timing display is only implemented for the PSP: compile the hooks away elsewhere
+#define DAEDALUS_PERF_SCOPE( category )
+#define gPerfStatsEnabled						false
+#define PerfStats_NoteInterpEntry( pc )
+#define PerfStats_Count( counter )
+#define PerfStats_TraceEvent( ... )
+#define PerfStats_CaptureAbortedTrace( ... )
+#define PerfStats_NoteFragment( ... )
+#define PerfStats_NotePIDma( ... )
+#define PerfStats_NoteFlush( ... )
+
+#endif // DAEDALUS_PSP
 
 #endif // SYSPSP_UTILITY_PERFSTATS_H_

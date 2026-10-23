@@ -17,13 +17,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
+
+#include "Base/Types.h"
 
 #ifdef DAEDALUS_ENABLE_OS_HOOKS
 // This file contains high level os emulation routines
-#include "OS.h"
-#include "OSMesgQueue.h"
-#include "ultra_R4300.h"
+#include "OSHLE/OS.h"
+#include "OSHLE/OSMesgQueue.h"
+#include "Ultra/ultra_R4300.h"
 
 #ifdef DUMPOSFUNCTIONS
 #ifdef DAED_OS_MESSAGE_QUEUES

@@ -29,7 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Dark Rift runs properly without custom microcodes, and has the same symptoms...
 // We need Turbo3D ucode support, actually a modified version of it, thanks Gonetz for the info :D
 
-void DLParser_Last_Legion_0x80( MicroCodeCommand command )
+void DLParser_Last_Legion_0x80( MicroCodeCommand command [[maybe_unused]] )
 {
      gDlistStack.address[gDlistStackPointer] += 16;
      			#ifdef DAEDALUS_DEBUG_DISPLAYLIST
@@ -107,8 +107,9 @@ void DLParser_TexRect_Last_Legion( MicroCodeCommand command )
 	//
 	// Fetch the next two instructions
 	//
-	DLParser_FetchNextCommand( &command2 );
-	DLParser_FetchNextCommand( &command3 );
+	if( !DLParser_FetchNextCommand( &command2 ) ||
+		!DLParser_FetchNextCommand( &command3 ) )
+		return;
 
 	RDP_TexRect tex_rect;
 	tex_rect.cmd0 = command.inst.cmd0;
@@ -134,27 +135,24 @@ void DLParser_TexRect_Last_Legion( MicroCodeCommand command )
 	//rect_t0 += (((u32)rect_dtdy >> 31) << 5);
 
 	// In Fill/Copy mode the coordinates are inclusive (i.e. add 1<<2 to the w/h)
-	//
-	switch ( gRDPOtherMode.cycle_type )
+	u32 cycle_mode = gRDPOtherMode.cycle_type;
+	if ( cycle_mode >= CYCLE_COPY )
 	{
-		case CYCLE_COPY:
-			rect_dsdx = rect_dsdx >> 2;	// In copy mode 4 pixels are copied at once.
-			// NB! Fall through!
-		case CYCLE_FILL:
-			rect_x1 += 4;
-			rect_y1 += 4;
-			break;
-		default:
-			break;
-	}
+		// In copy mode 4 pixels are copied at once.
+		if ( cycle_mode == CYCLE_COPY )
+			rect_dsdx = rect_dsdx >> 2;
 
+		tex_rect.x1 += 4;
+		tex_rect.y1 += 4;
+	}
+	
 	s16 rect_s1 = rect_s0 + (rect_dsdx * ( rect_x1 - rect_x0 ) >> 7);
 	s16 rect_t1 = rect_t0 + (rect_dtdy * ( rect_y1 - rect_y0 ) >> 7);
 
 	TexCoord st0( rect_s0, rect_t0 );
 	TexCoord st1( rect_s1, rect_t1 );
-	v2 xy0( tex_rect.x0 / 4.0f, tex_rect.y0 / 4.0f );
-	v2 xy1( tex_rect.x1 / 4.0f, tex_rect.y1 / 4.0f );
+	glm::vec2 xy0( tex_rect.x0 / 4.0f, tex_rect.y0 / 4.0f );
+	glm::vec2 xy1( tex_rect.x1 / 4.0f, tex_rect.y1 / 4.0f );
 
 	gRenderer->TexRect( tex_rect.tile_idx, xy0, xy1, st0, st1 );
 }

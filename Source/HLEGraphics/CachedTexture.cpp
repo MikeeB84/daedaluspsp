@@ -17,32 +17,36 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
-#include "CachedTexture.h"
+
+#include "Base/Types.h"
 
 #include <vector>
+#include <random>
 
-#include "TextureInfo.h"
-#include "ConvertImage.h"
-#include "ConvertTile.h"
+#include "Interface/ConfigOptions.h"
+#include "Core/ROM.h"
+#include "Debug/DBGConsole.h"
+#include "Debug/Dump.h"
+#include "HLEGraphics/CachedTexture.h"
+#include "HLEGraphics/ConvertImage.h"
+#include "HLEGraphics/ConvertTile.h"
+#include "HLEGraphics/TextureInfo.h"
 #include "Graphics/ColourValue.h"
 #include "Graphics/NativePixelFormat.h"
 #include "Graphics/NativeTexture.h"
 #include "Graphics/PngUtil.h"
 #include "Graphics/TextureTransform.h"
 
-#include "Config/ConfigOptions.h"
-#include "Core/ROM.h"
-#include "Debug/DBGConsole.h"
-#include "Debug/Dump.h"
-#include "Math/Math.h"
-#include "Math/MathUtil.h"
-#include "OSHLE/ultra_gbi.h"
-#include "Utility/AuxFunc.h"
-#include "Utility/IO.h"
+#include "Utility/MathUtil.h"
+#include "Ultra/ultra_gbi.h"
+
+
 #include "Utility/Profiler.h"
 
-static std::vector<u8>		gTexelBuffer {};
+#include <array>
+
+static std::vector<u8>		gTexelBuffer;
+// std::array<NativePf8888, 256> gPaletteBuffer;
 static NativePf8888			gPaletteBuffer[ 256 ];
 
 // NB: On the PSP we generate a lightweight hash of the texture data before
@@ -50,15 +54,15 @@ static NativePf8888			gPaletteBuffer[ 256 ];
 // On other platforms (e.g. OSX) updating textures is relatively inexpensive, so
 // we just skip the hashing process entirely, and update textures every frame
 // regardless of whether they've actually changed.
-#ifdef DAEDALUS_PSP
+#if defined (DAEDALUS_PSP) || defined(DAEDALUS_CTR)
 static const bool kUpdateTexturesEveryFrame = false;
 #else
 static const bool kUpdateTexturesEveryFrame = true;
 #endif
 
 
-#if defined(DAEDALUS_GL) || defined(DAEDALUS_ACCURATE_TMEM)
-static ETextureFormat SelectNativeFormat(const TextureInfo & ti)
+#if defined(DAEDALUS_GL) || defined(DAEDALUS_ACCURATE_TMEM) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
+static ETextureFormat SelectNativeFormat(const TextureInfo & ti [[maybe_unused]])
 {
 	// On OSX, always use RGBA 8888 textures.
 	return TexFmt_8888;
@@ -68,7 +72,8 @@ static ETextureFormat SelectNativeFormat(const TextureInfo & ti)
 
 #define DEFTEX	TexFmt_8888
 
-static const ETextureFormat TFmt[ 32 ] =
+// static const ETextureFormat TFmt[ 32 ] =
+std::array<const ETextureFormat, 32> TFmt =
 {
 //	4bpp				8bpp				16bpp				32bpp
 	DEFTEX,				DEFTEX,				TexFmt_5551,		TexFmt_8888,		// RGBA
@@ -81,7 +86,8 @@ static const ETextureFormat TFmt[ 32 ] =
 	DEFTEX,				DEFTEX,				DEFTEX,				DEFTEX				// ?
 };
 
-static const ETextureFormat TFmt_hack[ 32 ] =
+// static const ETextureFormat TFmt_hack[ 32 ] =
+std::array<const ETextureFormat, 32> TFmt_hack =
 {
 //	4bpp				8bpp				16bpp				32bpp
 	DEFTEX,				DEFTEX,				TexFmt_4444,		TexFmt_8888,		// RGBA
@@ -120,8 +126,8 @@ static bool GenerateTexels(void ** p_texels,
 	NativePf8888 *	palette = IsTextureFormatPalettised( texture_format ) ? gPaletteBuffer : nullptr;
 
 #ifdef DAEDALUS_ACCURATE_TMEM
-	// NB: if line is 0, it implies this is a direct load from ram (e.g. DLParser_Sprite2DDraw etc)
-	// This check isn't robust enough, SSV set ti.Line == 0 in game without calling Sprite2D
+	// NB: if line is 0, it implies this is a direct load from ram (e.g. S2DEX and Sprite2D ucodes)
+	// Some games set ti.Line = 0 on LoadTile, ex SSV and Paper Mario
 	if (ti.GetLine() > 0)
 	{
 		if (ConvertTile(ti, texels, palette, texture_format, pitch))
@@ -147,7 +153,7 @@ static bool GenerateTexels(void ** p_texels,
 	return false;
 }
 
-static void UpdateTexture( const TextureInfo & ti, CNativeTexture * texture )
+static void UpdateTexture( const TextureInfo & ti, std::shared_ptr<CNativeTexture> texture )
 {
 	#ifdef DAEDALUS_PROFILE
 	DAEDALUS_PROFILE( "Texture Conversion" );
@@ -158,7 +164,7 @@ static void UpdateTexture( const TextureInfo & ti, CNativeTexture * texture )
 	if ( texture != nullptr && texture->HasData() )
 	{
 		ETextureFormat	format = texture->GetFormat();
-		u32 			stride {texture->GetStride()};
+		u32 			stride = texture->GetStride();
 
 		void *	texels;
 		void *	palette;
@@ -182,8 +188,8 @@ static void UpdateTexture( const TextureInfo & ti, CNativeTexture * texture )
 			//
 			//	Mirror the texels if required (in-place)
 			//
-			bool mirror_s {ti.GetEmulateMirrorS()};
-			bool mirror_t {ti.GetEmulateMirrorT()};
+			bool mirror_s = ti.GetEmulateMirrorS();
+			bool mirror_t = ti.GetEmulateMirrorT();
 			if( mirror_s || mirror_t )
 			{
 				MirrorTexels( mirror_s, mirror_t, texels, stride, texels, stride, format, ti.GetWidth(), ti.GetHeight() );
@@ -231,8 +237,9 @@ bool CachedTexture::Initialise()
 	#ifdef DAEDALUS_ENABLE_ASSERTS
 	DAEDALUS_ASSERT_Q(mpTexture == nullptr);
 	#endif
-	u32 width  {mTextureInfo.GetWidth()};
-	u32 height {mTextureInfo.GetHeight()};
+	u32 width  = mTextureInfo.GetWidth();
+	u32 height = mTextureInfo.GetHeight();
+	std::default_random_engine FastRand;
 
 	if (mTextureInfo.GetEmulateMirrorS()) width  *= 2;
 	if (mTextureInfo.GetEmulateMirrorT()) height *= 2;
@@ -264,8 +271,8 @@ bool CachedTexture::UpdateTextureHash()
 		return true;
 	}
 
-	u32 new_hash_value {mTextureInfo.GenerateHashValue()};
-	bool changed       {new_hash_value != mTextureContentsHash};
+	u32 new_hash_value = mTextureInfo.GenerateHashValue();
+	bool changed       = new_hash_value != mTextureContentsHash;
 
 	mTextureContentsHash = new_hash_value;
 	return changed;
@@ -307,6 +314,7 @@ bool CachedTexture::IsFresh() const
 
 bool CachedTexture::HasExpired() const
 {
+	std::default_random_engine FastRand;
 	if (!kUpdateTexturesEveryFrame)
 	{
 		if (!IsFresh())
@@ -328,29 +336,19 @@ bool CachedTexture::HasExpired() const
 	//Otherwise we wait 20+random(0-3) frames before trashing the texture if unused
 	//Spread trashing them over time so not all get killed at once (lower value uses less VRAM) //Corn
 	return gRDPFrame - mFrameLastUsed > (20 + (FastRand() & 0x3));
-}
 
+}
 #ifdef DAEDALUS_DEBUG_DISPLAYLIST
-void CachedTexture::DumpTexture( const TextureInfo & ti, const CNativeTexture * texture )
+void CachedTexture::DumpTexture( const TextureInfo & ti, const std::shared_ptr<CNativeTexture> texture  )
 {
 	DAEDALUS_ASSERT(texture != nullptr, "Should have a texture");
 
 	if( texture != nullptr && texture->HasData() )
 	{
-		IO::Filename filename;
-		IO::Filename filepath;
-		IO::Filename dumpdir;
+		std::filesystem::path dumpdir = g_ROM.settings.GameName;
 
-		IO::Path::Combine( dumpdir, g_ROM.settings.GameName.c_str(), "Textures" );
-
-		Dump_GetDumpDirectory( filepath, dumpdir );
-
-		sprintf( filename, "%08x-%s_%dbpp-%dx%d-%dx%d.png",
-							ti.GetLoadAddress(), ti.GetFormatName(), ti.GetSizeInBits(),
-							0, 0,		// Left/Top
-							ti.GetWidth(), ti.GetHeight() );
-
-		IO::Path::Append( filepath, filename );
+		std::string filename = FORMAT_NAMESPACE::format("{}-{}_{}bpp-{}x{}-{}x{}.png", ti.GetLoadAddress(), ti.GetFormatName(), ti.GetSizeInBits(), 0, 0, ti.GetWidth(), ti.GetHeight() );
+		std::filesystem::path filepath;
 
 		void *	texels;
 		void *	palette;
@@ -366,8 +364,7 @@ void CachedTexture::DumpTexture( const TextureInfo & ti, const CNativeTexture * 
 			// than ram. This means that when we dump out the texture here, tmem won't necessarily
 			// contain our pixels.
 			const void * native_palette = texture->GetPalette();
-
-			PngSaveImage( filepath, texels, native_palette, texture->GetFormat(), texture->GetStride(), ti.GetWidth(), ti.GetHeight(), true );
+			PngSaveImage( dumpdir.c_str(), texels, native_palette, texture->GetFormat(), texture->GetStride(), ti.GetWidth(), ti.GetHeight(), true );
 		}
 	}
 }

@@ -1,7 +1,11 @@
-#include "stdafx.h"
-#include "RendererGL.h"
+
+#include "Base/Types.h"
+
 
 #include <vector>
+#include <GL/glew.h>
+#include <fstream>
+#include <iostream>
 
 #include "Core/ROM.h"
 #include "Debug/DBGConsole.h"
@@ -10,37 +14,30 @@
 #include "Graphics/NativeTexture.h"
 #include "HLEGraphics/DLDebug.h"
 #include "HLEGraphics/RDPStateManager.h"
-#include "OSHLE/ultra_gbi.h"
+#include "Ultra/ultra_gbi.h"
 #include "SysGL/GL.h"
-#include "System/Paths.h"
-#include "Utility/IO.h"
-#include "Utility/Macros.h"
-#include "Utility/Profiler.h"
+#include "SysGL/HLEGraphics/RendererGL.h"
+#include <glm/gtc/type_ptr.hpp> 
 
+#include "Base/Macros.h"
+#include "Utility/Paths.h"
+#include "Utility/Profiler.h"
 
 BaseRenderer * gRenderer   = NULL;
 RendererGL *   gRendererGL = NULL;
 
 static bool gAccurateUVPipe = true;
 
-/* OpenGL 3.0 */
-typedef void (APIENTRY * PFN_glGenVertexArrays)(GLsizei n, GLuint *arrays);
-typedef void (APIENTRY * PFN_glBindVertexArray)(GLuint array);
-typedef void (APIENTRY * PFN_glDeleteVertexArrays)(GLsizei n, GLuint *arrays);
-
-static PFN_glGenVertexArrays            pglGenVertexArrays = NULL;
-static PFN_glBindVertexArray            pglBindVertexArray = NULL;
-static PFN_glDeleteVertexArrays         pglDeleteVertexArrays = NULL;
-
 // We read n64.psh into this.
-static const char * 					gN64FramentLibrary = NULL;
+std::string	gN64FragmentLibrary;
 
 static const u32 kNumTextures = 2;
+
 
 #define RESOLVE_GL_FCN(type, var, name) \
     if (status == GL_TRUE) \
     {\
-        var = (type)glfwGetProcAddress((name));\
+        var = (type)SDL_GL_GetProcAddress((name));\
         if ((var) == NULL)\
         {\
             status = GL_FALSE;\
@@ -66,7 +63,7 @@ const float kShiftScales[] = {
     (float)(1 << 2),
     (float)(1 << 1),
 };
-DAEDALUS_STATIC_ASSERT(ARRAYSIZE(kShiftScales) == 16);
+DAEDALUS_STATIC_ASSERT(std::size(kShiftScales) == 16);
 
 enum
 {
@@ -86,45 +83,50 @@ static float 	gPositionBuffer[kMaxVertices][3];
 static TexCoord gTexCoordBuffer[kMaxVertices];
 static u32 		gColorBuffer[kMaxVertices];
 
+bool loadShader(const std::filesystem::path& shader_path)
+{
+	std::ifstream shader_file(shader_path);
+
+	if (shader_file.is_open())
+	{
+	if (!shader_file)
+	{
+		std::cerr << "ERROR: Could not load shader source" << shader_path << std::endl;
+		return false;
+	}
+	
+	shader_file.seekg(0, std::ios::end);
+	size_t length = shader_file.tellg();
+	shader_file.seekg(0, std::ios::beg);
+
+	std::string shader_code (length, '\0');
+	shader_file.read(&shader_code[0], length);
+
+	// Truncate shader code if it ends with newline characters
+	while (!shader_code.empty() && shader_code.back() == '\n')
+	{
+		shader_code.pop_back();
+	}
+	gN64FragmentLibrary  = shader_code;
+
+	return true;
+	}
+}
+
 bool initgl()
 {
-	DAEDALUS_ASSERT(gN64FramentLibrary == NULL, "Already initialised");
-
-	// FIXME(strmnnrmn): need a nicer 'load file' utility function.
-	{
-		IO::Filename shader_path;
-		IO::Path::Combine(shader_path, gDaedalusExePath, "n64.psh");
-
-		FILE * fh = fopen(shader_path, "r");
-		if (!fh)
-		{
-			DAEDALUS_ERROR("Couldn't load shader source %s", shader_path);
-			fprintf(stderr, "ERROR: couldn't load shader source %s\n", shader_path);
-			return false;
-		}
-
-		fseek(fh, 0, SEEK_END);
-		size_t l = ftell(fh);
-		fseek(fh, 0, SEEK_SET);
-		char * p = (char *)malloc(l+1);
-		fread(p, l, 1, fh);
-		p[l] = 0;
-		fclose(fh);
-
-		gN64FramentLibrary = p;
-	}
-
+	std::filesystem::path p = setBasePath("n64.psh");
+	
+	loadShader(p);
+	
 	// Only do software emulation of mirror_s/mirror_t if we're not doing accurate UV handling
 	gRDPStateManager.SetEmulateMirror(!gAccurateUVPipe);
 
 	// FIXME(strmnnrmn): we shouldn't need these with GLEW, but they don't seem to resolve on OSX.
-    GLboolean status = GL_TRUE;
-    RESOLVE_GL_FCN(PFN_glGenVertexArrays, pglGenVertexArrays, "glGenVertexArrays");
-    RESOLVE_GL_FCN(PFN_glDeleteVertexArrays, pglDeleteVertexArrays, "glDeleteVertexArrays");
-    RESOLVE_GL_FCN(PFN_glBindVertexArray, pglBindVertexArray, "glBindVertexArray");
+    GLboolean status [[maybe_unused]] = GL_TRUE;
 
-	pglGenVertexArrays(1, &gVAO);
-	pglBindVertexArray(gVAO);
+	glGenVertexArrays(1, &gVAO);
+	glBindVertexArray(gVAO);
 
 	glGenBuffers(kNumBuffers, gVBOs);
 
@@ -140,7 +142,7 @@ bool initgl()
 }
 
 
-void sceGuFog(f32 mn, f32 mx, u32 col)
+void sceGuFog(f32 mn [[maybe_unused]], f32 mx [[maybe_unused]], u32 col [[maybe_unused]])
 {
 	//DAEDALUS_ERROR( "%s: Not implemented", __FUNCTION__ );
 }
@@ -428,7 +430,7 @@ static void SprintShader(char (&frag_shader)[2048], const ShaderConfiguration & 
 		const char * filter0 = GetFilter(config.BilerpFilter, config.ClampS0, config.ClampT0);
 		const char * filter1 = GetFilter(config.BilerpFilter, config.ClampS1, config.ClampT1);
 
-		sprintf(body, "\tvec4 tex0 = %s(sti, uTileShift0, uTileMirror0, uTileMask0, uTileTL0, uTileBR0, uTileClampEnable0, uTexture0, uTexScale0);\n"
+		snprintf(body, sizeof(body), "\tvec4 tex0 = %s(sti, uTileShift0, uTileMirror0, uTileMask0, uTileTL0, uTileBR0, uTileClampEnable0, uTexture0, uTexScale0);\n"
 					  "\tvec4 tex1 = %s(sti, uTileShift1, uTileMirror1, uTileMask1, uTileTL1, uTileBR1, uTileClampEnable1, uTexture1, uTexScale1);\n"
 					  "\tcol.rgb = (%s - %s) * %s + %s;\n"
 					  "\tcol.a   = (%s - %s) * %s + %s;\n",
@@ -441,7 +443,7 @@ static void SprintShader(char (&frag_shader)[2048], const ShaderConfiguration & 
 		const char * filter0 = GetFilter(config.BilerpFilter, config.ClampS0, config.ClampT0);
 		const char * filter1 = GetFilter(config.BilerpFilter, config.ClampS1, config.ClampT1);
 
-		sprintf(body, "\tvec4 tex0 = %s(sti, uTileShift0, uTileMirror0, uTileMask0, uTileTL0, uTileBR0, uTileClampEnable0, uTexture0, uTexScale0);\n"
+		snprintf(body, sizeof(body), "\tvec4 tex0 = %s(sti, uTileShift0, uTileMirror0, uTileMask0, uTileTL0, uTileBR0, uTileClampEnable0, uTexture0, uTexScale0);\n"
 					  "\tvec4 tex1 = %s(sti, uTileShift1, uTileMirror1, uTileMask1, uTileTL1, uTileBR1, uTileClampEnable1, uTexture1, uTexScale1);\n"
 					  "\tcol.rgb = (%s - %s) * %s + %s;\n"
 					  "\tcol.a   = (%s - %s) * %s + %s;\n"
@@ -459,10 +461,10 @@ static void SprintShader(char (&frag_shader)[2048], const ShaderConfiguration & 
 	if (config.AlphaThreshold > 0)
 	{
 		char * p = body + strlen(body);
-		sprintf(p, "\tif(col.a < %f) discard;\n", (float)config.AlphaThreshold / 255.f);
+		snprintf(p, sizeof(body) - (p - body), "\tif(col.a < %f) discard;\n", (float)config.AlphaThreshold / 255.f);
 	}
 
-	sprintf(frag_shader, default_fragment_shader_fmt, body);
+	snprintf(frag_shader,sizeof(body), default_fragment_shader_fmt, body);
 }
 
 static void InitShaderProgram(ShaderProgram * program, const ShaderConfiguration & config, GLuint shader_program)
@@ -568,7 +570,6 @@ void RendererGL::MakeShaderConfigFromCurrentState(ShaderConfiguration * config) 
 
 static ShaderProgram * GetShaderForConfig(const ShaderConfiguration & config)
 {
-	DAEDALUS_ASSERT( gN64FramentLibrary != NULL, "Haven't initialised the n64 fragment library" );
 
 	for (u32 i = 0; i < gShaders.size(); ++i)
 	{
@@ -581,11 +582,11 @@ static ShaderProgram * GetShaderForConfig(const ShaderConfiguration & config)
 	SprintShader(frag_shader, config);
 
 	const char * vertex_lines[] = { default_vertex_shader };
-	const char * fragment_lines[] = { gN64FramentLibrary, frag_shader };
+	const char * fragment_lines[] = { gN64FragmentLibrary.c_str(), frag_shader };
 
 	GLuint shader_program = make_shader_program(
-								vertex_lines, ARRAYSIZE(vertex_lines),
-								fragment_lines, ARRAYSIZE(fragment_lines));
+								vertex_lines, std::size(vertex_lines),
+								fragment_lines, std::size(fragment_lines));
 	if (shader_program == 0)
 	{
 		fprintf(stderr, "ERROR: during creation of the shader program\n");
@@ -671,16 +672,23 @@ void RendererGL::RenderDaedalusVtx(int prim, const DaedalusVtx * vertices, int c
 
 void RendererGL::RenderDaedalusVtxStreams(int prim, const float * positions, const TexCoord * uvs, const u32 * colours, int count)
 {
-	glBindBuffer(GL_ARRAY_BUFFER, gVBOs[kPositionBuffer]);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 3 * count, positions);
+    // --- Update positions ---
+    glBindBuffer(GL_ARRAY_BUFFER, gVBOs[kPositionBuffer]);
+    // Orphan the buffer (allocate full size with NULL data)
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * kMaxVertices, NULL, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(float) * 3 * count, positions);
 
-	glBindBuffer(GL_ARRAY_BUFFER, gVBOs[kTexCoordBuffer]);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(TexCoord) * count, uvs);
+    // --- Update texture coordinates ---
+    glBindBuffer(GL_ARRAY_BUFFER, gVBOs[kTexCoordBuffer]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(TexCoord) * kMaxVertices, NULL, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(TexCoord) * count, uvs);
 
-	glBindBuffer(GL_ARRAY_BUFFER, gVBOs[kColorBuffer]);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(u32) * count, colours);
+    // --- Update colors ---
+    glBindBuffer(GL_ARRAY_BUFFER, gVBOs[kColorBuffer]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(u32) * kMaxVertices, NULL, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(u32) * count, colours);
 
-	glDrawArrays(prim, 0, count);
+    glDrawArrays(prim, 0, count);
 }
 
 /*
@@ -793,6 +801,10 @@ static void InitBlenderMode()
 		// Extreme-G.
 		type = kBlendModeFade;
 		break;
+	case 0x0c48: // In * 0 + Mem * 1
+		// SOTE text and hud
+		type = kBlendModeFade;
+		break;
 	case 0x0f0a: // In * 0 + In * 1 | In * 0 + In * 1
 		// Zelda OoT.
 		type = kBlendModeOpaque;
@@ -872,138 +884,110 @@ inline u32 MakeMirror(u32 mirror, u32 m)
 {
 	return (mirror && m) ? (1<<m) : 0;
 }
+void RendererGL::PrepareRenderState(const float *mat_project, bool disable_zbuffer) {
+    DAEDALUS_PROFILE("RendererGL::PrepareRenderState");
 
-void RendererGL::PrepareRenderState(const float (&mat_project)[16], bool disable_zbuffer)
-{
-	DAEDALUS_PROFILE( "RendererGL::PrepareRenderState" );
+    if (disable_zbuffer) {
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+    } else {
+        if (gRDPOtherMode.zmode == 3) {
+            glPolygonOffset(-1.0, -1.0);
+        } else {
+            glPolygonOffset(0.0, 0.0);
+        }
 
-	if ( disable_zbuffer )
-	{
-		glDisable(GL_DEPTH_TEST);
-		glDepthMask(GL_FALSE);
-	}
-	else
-	{
-		// Decal mode
-		if( gRDPOtherMode.zmode == 3 )
-		{
-			glPolygonOffset(-1.0, -1.0);
-		}
-		else
-		{
-			glPolygonOffset(0.0, 0.0);
-		}
+        if ((mTnL.Flags.Zbuffer & gRDPOtherMode.z_cmp) | gRDPOtherMode.z_upd) {
+            glEnable(GL_DEPTH_TEST);
+        } else {
+            glDisable(GL_DEPTH_TEST);
+        }
 
-		// Enable or Disable ZBuffer test
-		if ( (mTnL.Flags.Zbuffer & gRDPOtherMode.z_cmp) | gRDPOtherMode.z_upd )
-		{
-			glEnable(GL_DEPTH_TEST);
-		}
-		else
-		{
-			glDisable(GL_DEPTH_TEST);
-		}
+        glDepthMask(gRDPOtherMode.z_upd ? GL_TRUE : GL_FALSE);
+    }
 
-		glDepthMask(gRDPOtherMode.z_upd ? GL_TRUE : GL_FALSE);
-	}
+    u32 cycle_mode = gRDPOtherMode.cycle_type;
 
+    if (cycle_mode < CYCLE_COPY && gRDPOtherMode.force_bl) {
+        InitBlenderMode();
+    } else {
+        glDisable(GL_BLEND);
+    }
 
-	u32 cycle_mode = gRDPOtherMode.cycle_type;
+    ShaderConfiguration config;
+    MakeShaderConfigFromCurrentState(&config);
 
-	// Initiate Blender
-	if(cycle_mode < CYCLE_COPY && gRDPOtherMode.force_bl)
-	{
-		InitBlenderMode();
-	}
-	else
-	{
-		glDisable(GL_BLEND);
-	}
+    const ShaderProgram* program = GetShaderForConfig(config);
+    if (program == nullptr) {
+        DBGConsole_Msg(0, "Couldn't generate a shader for mux %llx, cycle %d, alpha %d\n", config.Mux, config.CycleType, config.AlphaThreshold);
+        return;
+    }
 
-	ShaderConfiguration config;
-	MakeShaderConfigFromCurrentState(&config);
+    glUseProgram(program->program);
 
-	const ShaderProgram * program = GetShaderForConfig(config);
-	if (program == NULL)
-	{
-		// There must have been some failure to compile the shader. Abort!
-		DBGConsole_Msg(0, "Couldn't generate a shader for mux %llx, cycle %d, alpha %d\n", config.Mux, config.CycleType, config.AlphaThreshold);
-		return;
-	}
+    glUniformMatrix4fv(program->uloc_project, 1, GL_FALSE, mat_project);
 
-	glUseProgram(program->program);
+    glUniform4f(program->uloc_primcol, mPrimitiveColour.GetRf(), mPrimitiveColour.GetGf(), mPrimitiveColour.GetBf(), mPrimitiveColour.GetAf());
+    glUniform4f(program->uloc_envcol, mEnvColour.GetRf(), mEnvColour.GetGf(), mEnvColour.GetBf(), mEnvColour.GetAf());
+    glUniform1f(program->uloc_primlodfrac, mPrimLODFraction);
 
-	glUniformMatrix4fv(program->uloc_project, 1, GL_FALSE, mat_project);
+    bool use_t1 = cycle_mode == CYCLE_2CYCLE;
+    bool install_textures[] = { true, use_t1 };
 
-	glUniform4f(program->uloc_primcol, mPrimitiveColour.GetRf(), mPrimitiveColour.GetGf(), mPrimitiveColour.GetBf(), mPrimitiveColour.GetAf());
-	glUniform4f(program->uloc_envcol,  mEnvColour.GetRf(),       mEnvColour.GetGf(),       mEnvColour.GetBf(),       mEnvColour.GetAf());
-	glUniform1f(program->uloc_primlodfrac, mPrimLODFraction);
+    extern u32 gRDPFrame;
+    glUniform1i(program->uloc_foo, gRDPFrame);
 
-	// Second texture is sampled in 2 cycle mode if text_lod is clear (when set,
-	// gRDPOtherMode.text_lod enables mipmapping, but we just set lod_frac to 0.
-	bool use_t1 = cycle_mode == CYCLE_2CYCLE;
+    for (u32 i = 0; i < kNumTextures; ++i) {
+        if (!install_textures[i])
+            continue;
 
-	bool install_textures[] = { true, use_t1 };
+        std::shared_ptr<CNativeTexture> texture = mBoundTexture[i];
 
-extern u32 gRDPFrame;
-	glUniform1i(program->uloc_foo, gRDPFrame);
+        if (texture != nullptr) {
+            glActiveTexture(GL_TEXTURE0 + i);
 
-	for (u32 i = 0; i < kNumTextures; ++i)
-	{
-		if (!install_textures[i])
-			continue;
+            texture->InstallTexture();
 
-		CNativeTexture * texture = mBoundTexture[i];
+            u8 tile_idx = mActiveTile[i];
+            const RDP_Tile& rdp_tile = gRDPStateManager.GetTile(tile_idx);
+            const RDP_TileSize& tile_size = gRDPStateManager.GetTileSize(tile_idx);
 
-		if (texture != NULL)
-		{
-			glActiveTexture(GL_TEXTURE0 + i);
+            glUniform1i(program->uloc_texture[i], i);
 
-			texture->InstallTexture();
+            bool clamp_s = rdp_tile.clamp_s || (rdp_tile.mask_s == 0);
+            bool clamp_t = rdp_tile.clamp_t || (rdp_tile.mask_t == 0);
 
-			u8 tile_idx = mActiveTile[i];
-			const RDP_Tile &     rdp_tile  = gRDPStateManager.GetTile( tile_idx );
-			const RDP_TileSize & tile_size = gRDPStateManager.GetTileSize( tile_idx );
+            u32 mirror_bits_s = MakeMirror(rdp_tile.mirror_s, rdp_tile.mask_s);
+            u32 mirror_bits_t = MakeMirror(rdp_tile.mirror_t, rdp_tile.mask_t);
 
-			// NB: think this can be done just once per program.
-			glUniform1i(program->uloc_texture[i], i);
+            u32 mask_bits_s = MakeMask(rdp_tile.mask_s);
+            u32 mask_bits_t = MakeMask(rdp_tile.mask_t);
 
-			bool clamp_s = rdp_tile.clamp_s || (rdp_tile.mask_s == 0);
-			bool clamp_t = rdp_tile.clamp_t || (rdp_tile.mask_t == 0);
+            glUniform2i(program->uloc_tileclamp[i], clamp_s, clamp_t);
 
-			u32 mirror_bits_s = MakeMirror(rdp_tile.mirror_s, rdp_tile.mask_s);
-			u32 mirror_bits_t = MakeMirror(rdp_tile.mirror_t, rdp_tile.mask_t);
+            glUniform2f(program->uloc_tileshift[i], kShiftScales[rdp_tile.shift_s], kShiftScales[rdp_tile.shift_t]);
+            glUniform2i(program->uloc_tilemask[i], mask_bits_s, mask_bits_t);
+            glUniform2i(program->uloc_tilemirror[i], mirror_bits_s, mirror_bits_t);
 
-			u32 mask_bits_s = MakeMask(rdp_tile.mask_s);
-			u32 mask_bits_t = MakeMask(rdp_tile.mask_t);
+            glUniform2i(program->uloc_tiletl[i], mTileTopLeft[i].s, mTileTopLeft[i].t);
+            glUniform2i(program->uloc_tilebr[i], tile_size.right, tile_size.bottom);
 
-			glUniform2i(program->uloc_tileclamp[i], clamp_s, clamp_t);
+            glUniform2f(program->uloc_texscale[i], 1.f / texture->GetCorrectedWidth(), 1.f / texture->GetCorrectedHeight());
 
-			glUniform2f(program->uloc_tileshift[i],  kShiftScales[rdp_tile.shift_s],  kShiftScales[rdp_tile.shift_t]);
-			glUniform2i(program->uloc_tilemask[i],   mask_bits_s,   mask_bits_t);
-			glUniform2i(program->uloc_tilemirror[i], mirror_bits_s, mirror_bits_t);
+            if ((gRDPOtherMode.text_filt != G_TF_POINT) | (gGlobalPreferences.ForceLinearFilter)) {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            } else {
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            }
 
-			glUniform2i(program->uloc_tiletl[i], mTileTopLeft[i].s, mTileTopLeft[i].t);
-			glUniform2i(program->uloc_tilebr[i], tile_size.right,   tile_size.bottom);
-
-			glUniform2f(program->uloc_texscale[i], 1.f / texture->GetCorrectedWidth(), 1.f / texture->GetCorrectedHeight());
-
-			if( (gRDPOtherMode.text_filt != G_TF_POINT) | (gGlobalPreferences.ForceLinearFilter) )
-			{
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			}
-			else
-			{
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			}
-
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, mTexWrap[i].u);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, mTexWrap[i].v);
-		}
-	}
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, mTexWrap[i].u);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, mTexWrap[i].v);
+        }
+    }
 }
+
 
 // FIXME(strmnnrmn): for fill/copy modes this does more work than needed.
 // It ends up copying colour/uv coords when not needed, and can use a shader uniform for the fill colour.
@@ -1016,7 +1000,7 @@ void RendererGL::RenderTriangles( DaedalusVtx * p_vertices, u32 num_vertices, bo
 		// FIXME: this should be applied in SetNewVertexInfo, and use TextureScaleX/Y to set the scale
 		if (mTnL.Flags.Light && mTnL.Flags.TexGen)
 		{
-			if (CNativeTexture * texture = mBoundTexture[0])
+			if (std::shared_ptr<CNativeTexture> texture = mBoundTexture[0])
 			{
 				// FIXME(strmnnrmn): I don't understand why the tile t/l is used here,
 				// but without it the Goldeneye Rareware logo looks off.
@@ -1039,7 +1023,7 @@ void RendererGL::RenderTriangles( DaedalusVtx * p_vertices, u32 num_vertices, bo
 	RenderDaedalusVtx(GL_TRIANGLES, p_vertices, num_vertices);
 }
 
-void RendererGL::TexRect( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexCoord st0, TexCoord st1 )
+void RendererGL::TexRect( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 & xy1, TexCoord st0, TexCoord st1 )
 {
 	// FIXME(strmnnrmn): in copy mode, depth buffer is always disabled. Might not need to check this explicitly.
 
@@ -1049,10 +1033,10 @@ void RendererGL::TexRect( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexCoord
 	// We have to do it before PrepareRenderState, because those values are applied to the graphics state.
 	PrepareTexRectUVs(&st0, &st1);
 
-	PrepareRenderState(mScreenToDevice.mRaw, gRDPOtherMode.depth_source ? false : true);
+	PrepareRenderState(glm::value_ptr(mScreenToDevice), gRDPOtherMode.depth_source ? false : true);
 
-	v2 screen0;
-	v2 screen1;
+	glm::vec2 screen0;
+	glm::vec2 screen1;
 	ConvertN64ToScreen( xy0, screen0 );
 	ConvertN64ToScreen( xy1, screen1 );
 
@@ -1089,7 +1073,7 @@ void RendererGL::TexRect( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexCoord
 #endif
 }
 
-void RendererGL::TexRectFlip( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexCoord st0, TexCoord st1 )
+void RendererGL::TexRectFlip( u32 tile_idx, const glm::vec2 & xy0, const glm::vec2 & xy1, TexCoord st0, TexCoord st1 )
 {
 	UpdateTileSnapshots( tile_idx );
 
@@ -1097,10 +1081,10 @@ void RendererGL::TexRectFlip( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexC
 	// We have to do it before PrepareRenderState, because those values are applied to the graphics state.
 	PrepareTexRectUVs(&st0, &st1);
 
-	PrepareRenderState(mScreenToDevice.mRaw, gRDPOtherMode.depth_source ? false : true);
+	PrepareRenderState(glm::value_ptr(mScreenToDevice), gRDPOtherMode.depth_source ? false : true);
 
-	v2 screen0;
-	v2 screen1;
+	glm::vec2 screen0;
+	glm::vec2 screen1;
 	ConvertN64ToScreen( xy0, screen0 );
 	ConvertN64ToScreen( xy1, screen1 );
 
@@ -1137,12 +1121,12 @@ void RendererGL::TexRectFlip( u32 tile_idx, const v2 & xy0, const v2 & xy1, TexC
 #endif
 }
 
-void RendererGL::FillRect( const v2 & xy0, const v2 & xy1, u32 color )
+void RendererGL::FillRect( const glm::vec2 & xy0, const glm::vec2 & xy1, u32 color )
 {
-	PrepareRenderState(mScreenToDevice.mRaw, gRDPOtherMode.depth_source ? false : true);
+	PrepareRenderState(glm::value_ptr(mScreenToDevice), gRDPOtherMode.depth_source ? false : true);
 
-	v2 screen0;
-	v2 screen1;
+	glm::vec2 screen0;
+	glm::vec2 screen1;
 	ConvertN64ToScreen( xy0, screen0 );
 	ConvertN64ToScreen( xy1, screen1 );
 
@@ -1180,15 +1164,14 @@ void RendererGL::FillRect( const v2 & xy0, const v2 & xy1, u32 color )
 }
 
 void RendererGL::Draw2DTexture(f32 x0, f32 y0, f32 x1, f32 y1,
-							   f32 u0, f32 v0, f32 u1, f32 v1,
-							   const CNativeTexture * texture)
+							   f32 u0, f32 v0, f32 u1, f32 v1, std::shared_ptr<CNativeTexture> texture)
 {
 	DAEDALUS_PROFILE( "RendererGL::Draw2DTexture" );
-
+	texture->InstallTexture();
 	// FIXME(strmnnrmn): is this right? Gross anyway.
 	gRDPOtherMode.cycle_type = CYCLE_COPY;
 
-	PrepareRenderState(mScreenToDevice.mRaw, false /* disable_depth */);
+	PrepareRenderState(glm::value_ptr(mScreenToDevice), false /* disable_depth */);
 
 	glEnable(GL_BLEND);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1232,14 +1215,15 @@ void RendererGL::Draw2DTextureR(f32 x0, f32 y0,
 								f32 x1, f32 y1,
 								f32 x2, f32 y2,
 								f32 x3, f32 y3,
-								f32 s, f32 t)	// With Rotation
+								f32 s, f32 t, std::shared_ptr<CNativeTexture> texture)	// With Rotation
 {
+		texture->InstallTexture();
 	DAEDALUS_PROFILE( "RendererGL::Draw2DTextureR" );
 
 	// FIXME(strmnnrmn): is this right? Gross anyway.
 	gRDPOtherMode.cycle_type = CYCLE_COPY;
 
-	PrepareRenderState(mScreenToDevice.mRaw, false /* disable_depth */);
+	PrepareRenderState(glm::value_ptr(mScreenToDevice), false /* disable_depth */);
 
 	glEnable(GL_BLEND);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

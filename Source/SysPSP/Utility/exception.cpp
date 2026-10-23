@@ -1,8 +1,10 @@
-#include "stdafx.h"
+
+#include "Base/Types.h"
 
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <pspgu.h>
 #include <pspkernel.h>
@@ -10,15 +12,19 @@
 #include <pspctrl.h>
 #include <kubridge.h>
 
-#include "Config/ConfigOptions.h"
+#include "Interface/ConfigOptions.h"
 #include "Core/CPU.h"
 #include "Core/ROM.h"
-#include "Core/RomSettings.h"
+#include "RomFile/RomSettings.h"
 #include "Debug/Dump.h"
-#include "Utility/PrintOpCode.h"
+#include "Debug/PrintOpCode.h"
+#include "SysPSP/Utility/Benchmark.h"
+#include "DynaRec/FragmentCache.h"
+#include "DynaRec/mips/CodeBufferInfoPSP.h"
+#include <malloc.h>
+#include <pspsysmem.h>
 #include "Core/Memory.h"
 #include "SysPSP/Utility/PerfStats.h"
-#include "SysPSP/Benchmark.h"
 
 
 PspDebugRegBlock *exception_regs;
@@ -70,6 +76,38 @@ static void DumpInformation(PspDebugRegBlock * regs)
 		fprintf(fp, "\tBadVAddr  - %08X\n", (u32)regs->badvaddr);
 		fprintf(fp, "\tRDRAM %08X - %08X\n", (u32)RDRAM_base, (u32)RDRAM_end);
 	}
+
+	// Dynarec code buffers and memory use, and the PSP code around the EPC (as raw words)
+	fprintf(fp, "\nDynarec / memory:\n");
+	{
+		const u32 epc = (u32)regs->epc;
+		SCodeBufferInfoPSP code = {};
+		if( CodeBufferPSP_GetInfo( &code ) )
+		{
+			const u32 main_base = (u32)code.PrimaryBase, second_base = (u32)code.SecondaryBase;
+			fprintf(fp, "\tMain buffer   %08X - %08X, used %u bytes\n", main_base, main_base + code.Size, (unsigned)code.PrimaryUsed);
+			fprintf(fp, "\tSecond buffer %08X - %08X, used %u bytes\n", second_base, second_base + code.Size, (unsigned)code.SecondaryUsed);
+			if( epc >= main_base && epc < main_base + code.Size )
+				fprintf(fp, "\tEPC is in the main buffer at +%u (%s)\n", (unsigned)( epc - main_base ), epc - main_base < code.PrimaryUsed ? "used part" : "UNUSED part");
+			else if( epc >= second_base && epc < second_base + code.Size )
+				fprintf(fp, "\tEPC is in the second buffer at +%u (%s)\n", (unsigned)( epc - second_base ), epc - second_base < code.SecondaryUsed ? "used part" : "UNUSED part");
+			else
+				fprintf(fp, "\tEPC is not in a code buffer\n");
+		}
+		const struct mallinfo heap = mallinfo();
+		fprintf(fp, "\tFragments %u, heap used %u KB, heap free inside the arena %u KB, arena %u KB\n",
+			(unsigned)gFragmentCache.GetCacheSize(), (unsigned)( heap.uordblks / 1024 ), (unsigned)( heap.fordblks / 1024 ), (unsigned)( heap.arena / 1024 ));
+
+		if( ( epc & 3 ) == 0 && epc >= 0x08800000 + 64 && epc < 0x0A000000 - 32 )
+		{
+			fprintf(fp, "\tPSP code around EPC:\n");
+			for( u32 a = epc - 64; a < epc + 32; a += 16 )
+			{
+				const u32 * w = (const u32 *)a;
+				fprintf(fp, "\t%c%08X: %08X %08X %08X %08X\n", ( epc >= a && epc < a + 16 ) ? '*' : ' ', a, w[0], w[1], w[2], w[3]);
+			}
+		}
+	}
 	// output CPU Regs
 	fprintf(fp, "\nCPU registers (PSP): ('*' -> pointing inside RDRAM else ':')\n");
 	{
@@ -81,7 +119,7 @@ static void DumpInformation(PspDebugRegBlock * regs)
 				regName[i+3], ( ((u32)regs->r[i+3] >= RDRAM_base) & ((u32)regs->r[i+3] <= RDRAM_end) ) ? "*" : ":", (int)regs->r[i+3]);
 	}
 
-	// What the emulator was doing (only tracked while "Display Info" is set to FPS + Timing)
+	// What the emulator was doing (only tracked while "Display Framerate" shows timing)
 	{
 		static const char * const kCategoryNames[] = { "CPU other", "CPU interpreter", "CPU compiled code", "CPU compiling",
 			"Graphics", "Graphics vertex", "Graphics texture", "Graphics draw", "Audio", "GPU wait", "Frame limiter" };
@@ -122,7 +160,7 @@ static void DumpInformation(PspDebugRegBlock * regs)
 	fprintf(fp, "\nRom Infomation:\n");
 	{
 		fprintf(fp, "\tClockrate:       0x%08x\n", g_ROM.rh.ClockRate);
-		fprintf(fp, "\tBootAddr:        0x%08x\n", SwapEndian(g_ROM.rh.BootAddress));
+		fprintf(fp, "\tBootAddr:        0x%08x\n", BSWAP32(g_ROM.rh.BootAddress));
 		fprintf(fp, "\tRelease:         0x%08x\n", g_ROM.rh.Release);
 		fprintf(fp, "\tCRC1:            0x%08x\n", g_ROM.rh.CRC1);
 		fprintf(fp, "\tCRC2:            0x%08x\n", g_ROM.rh.CRC2);
@@ -196,7 +234,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 	const u32 RDRAM_base {(u32)g_pu8RamBase};
 	const u32 RDRAM_end {(u32)g_pu8RamBase + 8 * 1024 * 1024 - 1};
     SceCtrlData pad;
-	bool exit {false};
+	bool mustExit {false};
 
 	pspDebugScreenInit();
     pspDebugScreenSetBackColor(0x00FF0000);
@@ -219,7 +257,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 	u32 scroll_epc	{(u32)regs->epc};
 #endif
 
-	while( !exit )
+	while( !mustExit )
 	{
 		pspDebugScreenClear();
 		pspDebugScreenPrintf("Exception[%s] RDRAM[%08X:%08X]\n\n", codeTxt[(regs->cause >> 2) & 31], (int)RDRAM_base, (int)RDRAM_end );
@@ -273,12 +311,12 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 			if (pad.Buttons & PSP_CTRL_CROSS)
 			{
 				DumpInformation(regs);
-				exit = true;
+				mustExit = true;
 				update = true;
 			}
 			else if (pad.Buttons & PSP_CTRL_CIRCLE)
 			{
-				exit = true;
+				mustExit = true;
 				update = true;
 			}
 			else if (pad.Buttons & PSP_CTRL_UP)
@@ -303,12 +341,12 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 			if (pad.Buttons & PSP_CTRL_CROSS)
 			{
 				DumpInformation(regs);
-				exit = true;
+				mustExit = true;
 				update = true;
 			}
 			else if (pad.Buttons & PSP_CTRL_CIRCLE)
 			{
-				exit = true;
+				mustExit = true;
 				update = true;
 			}
 		}
@@ -316,7 +354,7 @@ void ExceptionHandler(PspDebugRegBlock * regs)
 
 	}
 
-	sceKernelExitGame();
+	exit(1);
 }
 
 void initExceptionHandler()
@@ -331,7 +369,7 @@ void initExceptionHandler()
    option.position = 0;
    option.access = 1;
 
-   if((modid = sceKernelLoadModule("exception.prx", 0, &option)) >= 0)
+   if((modid = sceKernelLoadModule("Plugins/exception.prx", 0, &option)) >= 0)
    {
       args[0] = (int)ExceptionHandler;
       args[1] = (int)&exception_regs;

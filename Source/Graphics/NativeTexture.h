@@ -21,28 +21,34 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef GRAPHICS_NATIVETEXTURE_H_
 #define GRAPHICS_NATIVETEXTURE_H_
 
-#include "Utility/RefCounted.h"
-
 #include "TextureFormat.h"
 
-#include "Math/Vector2.h"
+#include <memory>
+#include <filesystem>
+#include <glm/glm.hpp>
 
-#ifdef DAEDALUS_GL
+#if defined(DAEDALUS_GL)
 #include "SysGL/GL.h"
 #endif
+#if defined(DAEDALUS_GLES)
+#include "SysGLES/GL.h"
+#endif
 
+#ifdef DAEDALUS_CTR
+#include <GL/picaGL.h>
+#endif
 class c32;
 
-class CNativeTexture : public CRefCounted
+class CNativeTexture 
 {
-	friend class CRefPtr<CNativeTexture>::_NoAddRefRelease<CNativeTexture>;
 
+		public:
 		CNativeTexture( u32 w, u32 h, ETextureFormat texture_format );
 		~CNativeTexture();
 
 	public:
-		static	CRefPtr<CNativeTexture>		Create( u32 width, u32 height, ETextureFormat texture_format );
-		static	CRefPtr<CNativeTexture>		CreateFromPng( const char * p_filename, ETextureFormat texture_format );
+		static	std::shared_ptr<CNativeTexture>		Create( u32 width, u32 height, ETextureFormat texture_format );
+		static	std::shared_ptr<CNativeTexture>		CreateFromPng( const std::filesystem::path p_filename, ETextureFormat texture_format );
 
 		void							InstallTexture() const;
 
@@ -60,7 +66,12 @@ class CNativeTexture : public CRefCounted
 		inline const void *				GetData() const					{ return mpData; }
 		inline void *					GetData()						{ return mpData; }
 
-#ifdef DAEDALUS_PSP
+#if defined(DAEDALUS_CTR)
+		inline GLuint					GetTextureId() const				{ return mTextureId; }
+
+#endif
+
+#if defined(DAEDALUS_PSP) || defined(DAEDALUS_CTR)
 		inline f32						GetScaleX() const				{ return mScale.x; }
 		inline f32						GetScaleY() const				{ return mScale.y; }
 #endif
@@ -79,12 +90,12 @@ class CNativeTexture : public CRefCounted
 		void *				mpData;
 		void *				mpPalette;
 
-#ifdef DAEDALUS_GL
+#if defined(DAEDALUS_GL) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
 		GLuint				mTextureId;
 #endif
 
-#ifdef DAEDALUS_PSP
-		v2					mScale;
+#if defined(DAEDALUS_PSP) || defined(DAEDALUS_CTR) || defined(DAEDALUS_GLES)
+		glm::vec2					mScale;
 		bool				mIsDataVidMem;
 		bool				mIsPaletteVidMem;
 		bool				mIsSwizzled;

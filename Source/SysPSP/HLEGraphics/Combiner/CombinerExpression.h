@@ -25,8 +25,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <vector>
 #include <algorithm>
 
-#include "Utility/DaedalusTypes.h"
-#include "CombinerInput.h"
+#include "SysPSP/HLEGraphics/Combiner/CombinerInput.h"
+#include "Base/Types.h"
 
 class COutputStream;
 

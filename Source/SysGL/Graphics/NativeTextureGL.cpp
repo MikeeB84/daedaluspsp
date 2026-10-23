@@ -17,15 +17,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
+
+#include "Base/Types.h"
 #include "Graphics/NativeTexture.h"
 #include "Graphics/ColourValue.h"
 #include "Graphics/NativePixelFormat.h"
 
-#include "Math/MathUtil.h"
+#include "Utility/MathUtil.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include <png.h>
+#include <filesystem> 
 
 static const u32 kPalette4BytesRequired = 16 * sizeof( NativePf8888 );
 static const u32 kPalette8BytesRequired = 256 * sizeof( NativePf8888 );
@@ -46,12 +49,12 @@ static u32 GetTextureBlockWidth( u32 dimension, ETextureFormat texture_format )
 static inline u32 CorrectDimension( u32 dimension )
 {
 	static const u32 MIN_TEXTURE_DIMENSION = 1;
-	return Max( GetNextPowerOf2( dimension ), MIN_TEXTURE_DIMENSION );
+	return std::max( GetNextPowerOf2( dimension ), MIN_TEXTURE_DIMENSION );
 }
 
-CRefPtr<CNativeTexture>	CNativeTexture::Create( u32 width, u32 height, ETextureFormat texture_format )
+std::shared_ptr<CNativeTexture>	CNativeTexture::Create( u32 width, u32 height, ETextureFormat texture_format )
 {
-	return new CNativeTexture( width, height, texture_format );
+	return std::make_shared<CNativeTexture>( width, height, texture_format );
 }
 
 CNativeTexture::CNativeTexture( u32 w, u32 h, ETextureFormat texture_format )
@@ -157,12 +160,12 @@ namespace
 	//	p_texture is either an existing texture (in case it must be of the
 	//	correct dimensions and format) else a new texture is created and returned.
 	//*****************************************************************************
-	CRefPtr<CNativeTexture>	LoadPng( const char * p_filename, ETextureFormat texture_format )
+	std::shared_ptr<CNativeTexture>	LoadPng( const std::filesystem::path p_filename, ETextureFormat texture_format )
 	{
 		const size_t	SIGNATURE_SIZE = 8;
 		u8	signature[ SIGNATURE_SIZE ];
 
-		FILE * fh = fopen( p_filename,"rb" );
+		FILE * fh = fopen( p_filename.string().c_str(),"rb" );
 		if (fh == NULL)
 		{
 			return NULL;
@@ -205,7 +208,7 @@ namespace
 		png_uint_32 width  = png_get_image_width( p_png_struct, p_png_info );
 		png_uint_32 height = png_get_image_height( p_png_struct, p_png_info );
 
-		CRefPtr<CNativeTexture>	texture = CNativeTexture::Create( width, height, texture_format );
+		std::shared_ptr<CNativeTexture>	texture = CNativeTexture::Create( width, height, texture_format );
 
 		DAEDALUS_ASSERT( texture->GetWidth() >= width, "Width is unexpectedly small" );
 		DAEDALUS_ASSERT( texture->GetHeight() >= height, "Height is unexpectedly small" );
@@ -261,7 +264,7 @@ namespace
 	}
 }
 
-CRefPtr<CNativeTexture>	CNativeTexture::CreateFromPng( const char * p_filename, ETextureFormat texture_format )
+std::shared_ptr<CNativeTexture>	CNativeTexture::CreateFromPng( const std::filesystem::path p_filename, ETextureFormat texture_format )
 {
 	return LoadPng( p_filename, texture_format );
 }

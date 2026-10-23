@@ -22,10 +22,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef CORE_ROM_H_
 #define CORE_ROM_H_
 
-#include "ROMImage.h"
-#include "Utility/IO.h"
-#include <string>
+#include "Core/ROMImage.h"
 
+#include <string>
+#include <filesystem>
 class RomID
 {
 	public:
@@ -82,7 +82,7 @@ class RomID
 		u8		CountryID;
 };
 
-#include "RomSettings.h"
+#include "RomFile/RomSettings.h"
 
 struct SRomPreferences;
 
@@ -92,7 +92,7 @@ struct SRomPreferences;
 //*****************************************************************************
 //	Hacks for games etc.
 //*****************************************************************************
-enum EGameHacks
+enum EGameHacks : uint16_t
 {
 	NO_GAME_HACK = 0,
 	GOLDEN_EYE,
@@ -117,6 +117,7 @@ enum EGameHacks
 	SIN_PUNISHMENT,
 	DK64,
 	BANJO_TOOIE,
+	WCW_NITRO,
 	MAX_HACK_NAMES	//DONT CHANGE THIS! AND SHOULD BE LAST ENTRY
 };
 
@@ -125,7 +126,7 @@ enum EGameHacks
 //*****************************************************************************
 struct RomInfo
 {
-	IO::Filename	mFileName;
+	std::filesystem::path	mFileName;
 	RomID			mRomID;					// The RomID (unique to this rom)
 
 	ROMHeader		rh;						// Copy of the ROM header, correctly byteswapped
@@ -167,12 +168,12 @@ bool ROM_LoadFile();
 void ROM_UnloadFile();
 bool ROM_LoadFile(const RomID & rom_id, const RomSettings & settings, const SRomPreferences & preferences );
 
-bool ROM_GetRomDetailsByFilename( const char * filename, RomID * id, u32 * rom_size, ECicType * boot_type );
+bool ROM_GetRomDetailsByFilename( const std::filesystem::path &filename, RomID * id, u32 * rom_size, ECicType * boot_type );
 bool ROM_GetRomDetailsByID( const RomID & id, u32 * rom_size, ECicType * boot_type );
-bool ROM_GetRomName( const char * filename, std::string & game_name );
+bool ROM_GetRomName( const std::filesystem::path &filename, std::string & game_name );
 
-const char *	ROM_GetCountryNameFromID( u8 country_id )	DAEDALUS_ATTRIBUTE_PURE;
-u32				ROM_GetTvTypeFromID( u8 country_id )		DAEDALUS_ATTRIBUTE_PURE;
+const char *	ROM_GetCountryNameFromID( u8 country_id );
+u32				ROM_GetTvTypeFromID( u8 country_id );
 const char *	ROM_GetCicTypeName( ECicType cic_type );
 
 //*****************************************************************************
@@ -180,7 +181,7 @@ const char *	ROM_GetCicTypeName( ECicType cic_type );
 //*****************************************************************************
 extern RomInfo g_ROM;
 
-#if defined(DAEDALUS_ENABLE_DYNAREC_PROFILE) || defined(DAEDALUS_W32)
+#if defined(DAEDALUS_ENABLE_DYNAREC_PROFILE)
 extern u32 g_dwNumFrames;
 #endif
 

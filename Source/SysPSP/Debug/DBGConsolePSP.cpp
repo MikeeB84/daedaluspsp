@@ -17,7 +17,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
+
+#include "Base/Types.h"
 #include "Debug/DBGConsole.h"
 
 #ifdef DAEDALUS_DEBUG_CONSOLE
@@ -27,7 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <string.h>
 
 #include "Debug/DebugConsoleImpl.h"
-#include "Test/BatchTest.h"
+#include "Utility/BatchTest.h"
 
 static const char * const kTerminalSaveCursor			= "\033[s";
 static const char * const kTerminalRestoreCursor		= "\033[u";
@@ -55,9 +56,9 @@ private:
 
 template<> bool	CSingleton< CDebugConsole >::Create()
 {
-	DAEDALUS_ASSERT_Q(mpInstance == NULL);
+	DAEDALUS_ASSERT_Q(mpInstance == nullptr);
 
-	mpInstance = new IDebugConsole();
+	mpInstance = std::make_shared<IDebugConsole>();
 
 	return true;
 }

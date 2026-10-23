@@ -17,13 +17,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "stdafx.h"
-#include "IndirectExitMap.h"
 
-#include "DynaRecProfile.h"
-#include "FragmentCache.h"
-#include "Fragment.h"
+#include "Base/Types.h"
 
+
+#include "DynaRec/DynaRecProfile.h"
+#include "DynaRec/FragmentCache.h"
+#include "DynaRec/Fragment.h"
+#include "DynaRec/IndirectExitMap.h"
 #include "Debug/DBGConsole.h"
 
 
@@ -62,7 +63,7 @@ CFragment *	CIndirectExitMap::LookupIndirectExit( u32 exit_address )
 extern "C"
 {
 
-const void *	R4300_CALL_TYPE IndirectExitMap_Lookup( CIndirectExitMap * p_map, u32 exit_address )
+const void *	 IndirectExitMap_Lookup( CIndirectExitMap * p_map, u32 exit_address )
 {
 	CFragment *	p_fragment( p_map->LookupIndirectExit( exit_address ) );
 	if( p_fragment != nullptr )

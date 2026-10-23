@@ -24,7 +24,8 @@
 #ifndef HLEGRAPHICS_RDP_H_
 #define HLEGRAPHICS_RDP_H_
 
-#include "Utility/DaedalusTypes.h"
+#include "HLEGraphics/DLDebug.h"
+#include "Base/Types.h"
 
 inline u32 pixels2bytes( u32 pixels, u32 size )
 {
@@ -38,10 +39,10 @@ inline u32 bytes2pixels( u32 bytes, u32 size )
 
 struct SImageDescriptor
 {
-	u32 Format {};		// "RGBA", "YUV", "CI", "IA", "I", "?1", "?2", "?3"
-	u32 Size {};		// "4bpp", "8bpp", "16bpp", "32bpp"
-	u32 Width {};		// Num Pixels
-	u32 Address {};	// Location
+	u32 Format;		// "RGBA", "YUV", "CI", "IA", "I", "?1", "?2", "?3"
+	u32 Size;		// "4bpp", "8bpp", "16bpp", "32bpp"
+	u32 Width;		// Num Pixels
+	u32 Address;	// Location
 
 	inline u32 GetPitch() const
 	{
@@ -54,13 +55,15 @@ struct SImageDescriptor
 		return Address + y * ((Width << Size) >> 1) + ((x << Size) >> 1);
 	}
 
-	// Optimised version when Size == G_IM_SIZ_16b
+	// Optimised versions when Size == G_IM_SIZ_16b
 	inline u32 GetPitch16bpp() const
 	{
+		DAEDALUS_DL_ASSERT(Size == 2, "Incorrect expected size - not 16bpp");
 		return Width << 1;
 	}
 	inline u32 GetAddress16bpp(u32 x, u32 y) const
 	{
+		DAEDALUS_DL_ASSERT(Size == 2, "Incorrect expected size - not 16bpp");
 		return Address + ((y * Width + x) << 1);
 	}
 
@@ -109,7 +112,9 @@ struct RDP_GeometryMode
 		};
 	};
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_GeometryMode) == 4);
+#endif
 
 struct RDP_OtherMode
 {
@@ -177,13 +182,14 @@ struct RDP_OtherMode
 
 		struct
 		{
-			u32	L {};
-			u32	H {};
+			u32	L;
+			u32	H;
 		};
 	};
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_OtherMode) == 8);
-
+#endif
 struct RDP_Combine
 {
 	union
@@ -216,13 +222,14 @@ struct RDP_Combine
 
 		struct
 		{
-			u32	L {};
-			u32	H {};
+			u32	L;
+			u32	H;
 		};
 	};
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_Combine) == 8);
-
+#endif
 
 struct RDP_TexRect
 {
@@ -230,10 +237,10 @@ struct RDP_TexRect
 	{
 		struct
 		{
-			u32 cmd3 {};
-			u32 cmd2 {};
-			u32 cmd1 {};
-			u32 cmd0 {};
+			u32 cmd3;
+			u32 cmd2;
+			u32 cmd1;
+			u32 cmd0;
 		};
 
 		struct
@@ -260,8 +267,9 @@ struct RDP_TexRect
 		};
 	};
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_TexRect) == 16);
-
+#endif
 
 struct RDP_MemRect
 {
@@ -269,9 +277,9 @@ struct RDP_MemRect
 	{
 		struct
 		{
-			u32 cmd2 {};
-			u32 cmd1 {};
-			u32 cmd0 {};
+			u32 cmd2;
+			u32 cmd1;
+			u32 cmd0;
 		};
 
 		struct
@@ -300,8 +308,9 @@ struct RDP_MemRect
 
 	};
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_MemRect) == 12);
-
+#endif
 
 struct RDP_Tile
 {
@@ -309,8 +318,8 @@ struct RDP_Tile
 	{
 		struct
 		{
-			u32		cmd1 {};
-			u32		cmd0 {};
+			u32		cmd1;
+			u32		cmd0;
 		};
 
 		struct
@@ -351,8 +360,9 @@ struct RDP_Tile
 		return cmd0 != rhs.cmd0 || cmd1 != rhs.cmd1;
 	}
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_Tile) == 8);
-
+#endif
 
 struct RDP_TileSize
 {
@@ -360,8 +370,8 @@ struct RDP_TileSize
 	{
 		struct
 		{
-			u32		cmd1 {};
-			u32		cmd0 {};
+			u32		cmd1;
+			u32		cmd0;
 		};
 
 		struct
@@ -401,6 +411,7 @@ struct RDP_TileSize
 		return cmd0 != rhs.cmd0 || cmd1 != rhs.cmd1;
 	}
 };
+#ifdef DAEDALUS_ENABLE_ASSERTS
 DAEDALUS_STATIC_ASSERT(sizeof(RDP_TileSize) == 8);
-
+#endif
 #endif // HLEGRAPHICS_RDP_H_

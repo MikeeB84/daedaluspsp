@@ -1,6 +1,7 @@
-#include "stdafx.h"
-#include "Utility/Cond.h"
-#include "Utility/Mutex.h"
+
+#include "Base/Types.h"
+#include "System/Condition.h"
+#include "System/Mutex.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -10,6 +11,7 @@ const double kTimeoutInfinity = 0.f;
 
 // Cond wrapper derived from GLFW 2.7, see http://www.glfw.org/.
 
+// Displaylist Debugger
 Cond * CondCreate()
 {
 	pthread_cond_t * cond = (pthread_cond_t *)malloc( sizeof(pthread_cond_t) );
@@ -22,11 +24,13 @@ Cond * CondCreate()
 	return (Cond *)cond;
 }
 
+
 void CondDestroy(Cond * cond)
 {
-	pthread_cond_destroy( (pthread_cond_t *)cond );
+	// pthread_cond_destroy( (pthread_cond_t *)cond );
 	free( cond );
 }
+// Displaylist Debugger
 
 static void ComputeWait(double timeout, timespec * wait)
 {
@@ -44,21 +48,23 @@ static void ComputeWait(double timeout, timespec * wait)
 	wait->tv_sec = currenttime.tv_sec + dt_sec;
 }
 
-void CondWait(Cond * cond, Mutex * mutex, double timeout)
+// Displaylist Debugger
+void CondWait(Cond * cond [[maybe_unused]], Mutex * mutex [[maybe_unused]], double timeout)
 {
 	if (timeout <= 0)
 	{
-		pthread_cond_wait( (pthread_cond_t *)cond, &mutex->mMutex );
+		// pthread_cond_wait( (pthread_cond_t *)cond, &mutex->mMutex );
 	}
 	else
 	{
 		timespec wait;
 		ComputeWait(timeout, &wait);
 
-		pthread_cond_timedwait( (pthread_cond_t *)cond, &mutex->mMutex, &wait );
+		// pthread_cond_timedwait( (pthread_cond_t *)cond, &mutex->mMutex, &wait );
 	}
 }
 
+// DisplayList Debugger
 void CondSignal(Cond * cond)
 {
 	pthread_cond_signal( (pthread_cond_t *)cond );
