@@ -147,7 +147,9 @@ static const SCodeBuffer *	gpSecondaryBuffer = nullptr;
 
 bool	CodeBufferPSP_GetInfo( SCodeBufferInfoPSP * info )
 {
-	if( gpPrimaryBuffer == nullptr || gpSecondaryBuffer == nullptr ) return false;
+	// Checked before use, as this is called from the crash handler
+	if( (u32)gpPrimaryBuffer < 0x08800000 || (u32)gpPrimaryBuffer >= 0x0A000000 ||
+		(u32)gpSecondaryBuffer < 0x08800000 || (u32)gpSecondaryBuffer >= 0x0A000000 ) return false;
 	info->PrimaryBase = gpPrimaryBuffer->mpBuffer;
 	info->PrimaryUsed = gpPrimaryBuffer->mBufferPtr;
 	info->SecondaryBase = gpSecondaryBuffer->mpBuffer;

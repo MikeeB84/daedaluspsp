@@ -698,21 +698,6 @@ namespace
 	}
 }
 
-// Largest block malloc can still hand out (checked from 8 MB down to 32 KB)
-static u32 LargestFreeHeapBlock()
-{
-	for( u32 size = 8 * 1024 * 1024; size >= 32 * 1024; size /= 2 )
-	{
-		void * p = malloc( size );
-		if( p != nullptr )
-		{
-			free( p );
-			return size;
-		}
-	}
-	return 0;
-}
-
 void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 {
 	char line[ 512 ];		// Room for the game header with a long ROM file name
@@ -721,7 +706,7 @@ void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 	{
 		gLoggedHeader = true;
 		gLoggedGame = g_ROM.settings.GameName;
-		snprintf( line, sizeof( line ), "# %s%s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes | code KB: main second | fragments | heap KB: used, largest block malloc can give (max 8192)\n", gLoggedGame.c_str(), gLogSectionNote.c_str() );
+		snprintf( line, sizeof( line ), "# %s%s\n# fps vb/hz | cpu: int dyn jit other | gfx: dl vtx tex draw | aud ge idle | per second: traces aborted salvaged compiled flushes | code KB: main second | fragments | heap KB used\n", gLoggedGame.c_str(), gLogSectionNote.c_str() );
 		gLogSectionNote.clear();
 		Append( line );
 	}
@@ -731,7 +716,7 @@ void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 	CodeBufferPSP_GetInfo( &code );
 	const struct mallinfo heap = mallinfo();
 
-	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u %u | %u %u %u %u | %u %u %u | %u %u %u %u %u | %u %u | %u | %u %u\n",
+	snprintf( line, sizeof( line ), "%.1f %u/%u | %u %u %u %u | %u %u %u %u | %u %u %u | %u %u %u %u %u | %u %u | %u | %u\n",
 		fps, (unsigned)vbls_per_second, (unsigned)tv_hz,
 		(unsigned)gPercent[ PERF_CPU_INTERP ], (unsigned)gPercent[ PERF_CPU_DYNAREC ], (unsigned)gPercent[ PERF_CPU_COMPILE ], (unsigned)gPercent[ PERF_CPU ],
 		(unsigned)gPercent[ PERF_GFX ], (unsigned)gPercent[ PERF_GFX_VTX ], (unsigned)gPercent[ PERF_GFX_TEX ], (unsigned)gPercent[ PERF_GFX_DRAW ],
@@ -741,7 +726,7 @@ void PerfStats_LogSample( f32 fps, u32 vbls_per_second, u32 tv_hz )
 		(unsigned)gCountsPerSecond[ PERF_COUNT_FLUSH ],
 		(unsigned)( code.PrimaryUsed / 1024 ), (unsigned)( code.SecondaryUsed / 1024 ),
 		(unsigned)gFragmentCache.GetCacheSize(),
-		(unsigned)( heap.uordblks / 1024 ), (unsigned)( LargestFreeHeapBlock() / 1024 ) );
+		(unsigned)( heap.uordblks / 1024 ) );
 	Append( line );
 
 	if( ++gSamplesSinceFlush >= kFlushEverySamples )
