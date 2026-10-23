@@ -70,8 +70,12 @@ struct RomSettings
 	bool				VideoRateMatch;
 	bool				FogEnabled;
 	bool                MemoryAccessOptimisation;
-	bool				MemoryAccessOptimisationOff;	// roms.ini says "MemoryAccessOptimisation=no": this ROM crashes with it
 	bool				CheatsEnabled;
+
+	// Set when roms.ini explicitly turns these off for a game (e.g. "DynarecLoopOptimisation=no").
+	// They then stay off whatever the player's settings, as the game is known to break with them.
+	bool				DynarecLoopOptimisationForcedOff;
+	bool				MemoryAccessOptimisationForcedOff;
 
 	RomSettings();
 

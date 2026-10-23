@@ -274,6 +274,7 @@ bool IRomSettingsDB::OpenSettingsFile( const std::filesystem::path &filename )
 		if( p_section->FindProperty( "DynarecLoopOptimisation", &p_property ) )
 		{
 			settings.DynarecLoopOptimisation = p_property->GetBooleanValue( false );
+			settings.DynarecLoopOptimisationForcedOff = !p_property->GetBooleanValue( true );
 		}
 		if( p_section->FindProperty( "DynarecDoublesOptimisation", &p_property ) )
 		{
@@ -306,7 +307,7 @@ bool IRomSettingsDB::OpenSettingsFile( const std::filesystem::path &filename )
 		if( p_section->FindProperty( "MemoryAccessOptimisation", &p_property ) )
 		{
 			settings.MemoryAccessOptimisation = p_property->GetBooleanValue( false );
-			settings.MemoryAccessOptimisationOff = !settings.MemoryAccessOptimisation;
+			settings.MemoryAccessOptimisationForcedOff = !p_property->GetBooleanValue( true );
 		}
 		if( p_section->FindProperty( "CheatsEnabled", &p_property ) )
 		{
@@ -413,6 +414,7 @@ void IRomSettingsDB::OutputSectionDetails( const RomID & id, const RomSettings &
     if (!settings.SpeedSyncEnabled)            out << "SpeedSyncEnabled=" << settings.SpeedSyncEnabled << "\n";
     if (!settings.DynarecSupported)            out << "DynarecSupported=no\n";
     if (settings.DynarecLoopOptimisation)      out << "DynarecLoopOptimisation=yes\n";
+    if (settings.DynarecLoopOptimisationForcedOff)  out << "DynarecLoopOptimisation=no\n";
     if (settings.DynarecDoublesOptimisation)   out << "DynarecDoublesOptimisation=yes\n";
     if (!settings.DoubleDisplayEnabled)        out << "DoubleDisplayEnabled=no\n";
     if (settings.CleanSceneEnabled)            out << "CleanSceneEnabled=yes\n";
@@ -421,7 +423,7 @@ void IRomSettingsDB::OutputSectionDetails( const RomID & id, const RomSettings &
     if (settings.VideoRateMatch)               out << "VideoRateMatch=yes\n";
     if (settings.FogEnabled)                   out << "FogEnabled=yes\n";
     if (settings.MemoryAccessOptimisation)     out << "MemoryAccessOptimisation=yes\n";
-    if (settings.MemoryAccessOptimisationOff)  out << "MemoryAccessOptimisation=no\n";
+    if (settings.MemoryAccessOptimisationForcedOff) out << "MemoryAccessOptimisation=no\n";
     if (settings.CheatsEnabled)                out << "CheatsEnabled=yes\n";
 
     if (settings.ExpansionPakUsage != PAK_STATUS_UNKNOWN) 
@@ -484,8 +486,9 @@ RomSettings::RomSettings()
 ,	VideoRateMatch( false )
 ,	FogEnabled( false )
 ,   MemoryAccessOptimisation( false )
-,	MemoryAccessOptimisationOff( false )
 ,   CheatsEnabled( false )
+,	DynarecLoopOptimisationForcedOff( false )
+,	MemoryAccessOptimisationForcedOff( false )
 {
 }
 
@@ -514,5 +517,6 @@ void	RomSettings::Reset()
 	FogEnabled = false;
 	CheatsEnabled = false;
 	MemoryAccessOptimisation = false;
-	MemoryAccessOptimisationOff = false;
+	DynarecLoopOptimisationForcedOff = false;
+	MemoryAccessOptimisationForcedOff = false;
 }
