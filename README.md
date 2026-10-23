@@ -62,6 +62,7 @@ If a file called `benchmark.ini` is in the DaedalusX64 folder, Daedalus runs eve
 - A game that freezes or never shows a picture is cut short. After a crash it saves `exception.txt` and restarts.
 - Progress is kept in `benchmark_progress.txt`. After a crash or switching the PSP off, starting it again carries on; a ROM that locks up the PSP is run once more, then skipped.
 - `Only=` lines limit the run to ROMs whose file name contains that text.
+- **Two passes:** with `SecondPassSeconds` set, every ROM first gets a short run (`Seconds`). When that is finished, its results are kept as `benchmark_pass1.txt` / `perf_pass1.txt`, the ROMs that ran OK (showed a picture and kept running without crashing or freezing) are listed in `benchmark_pass2_list.txt`, and just those are run again for `SecondPassSeconds`. For example 30 seconds to see what loads, then 90 seconds for speed figures.
 
 The benchmark is meant to be installed as a separate folder (for example `PSP/GAME/DaedalusX64Bench`) reading the ROMs from the normal install. Do not put `benchmark.ini` in your normal DaedalusX64 folder.
 

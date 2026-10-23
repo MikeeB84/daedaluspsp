@@ -40,6 +40,9 @@ namespace
 	const char * const	kSettingsFile = "benchmark.ini";
 	const char * const	kResultsFile = "benchmark.txt";
 	const char * const	kProgressFile = "benchmark_progress.txt";
+	const char * const	kPass1ResultsFile = "benchmark_pass1.txt";
+	const char * const	kPass1PerfFile = "perf_pass1.txt";
+	const char * const	kPass2ListFile = "benchmark_pass2_list.txt";
 
 	struct SSettings
 	{
@@ -49,6 +52,11 @@ namespace
 		u32							NoPictureSeconds = 90;	// Stop a ROM that never shows a frame
 		std::vector< std::string >	RomDirectories;
 		std::vector< std::string >	Only;					// If set, only run ROMs whose file name contains one of these
+
+		// Optional second pass: once every ROM has had a short run, the ROMs that ran OK are run
+		// again for longer (0 = no second pass)
+		u32							SecondPassSeconds = 0;
+		u32							SecondPassButtonSeconds = 30;
 	};
 
 	SSettings			gSettings;
@@ -60,6 +68,7 @@ namespace
 	u32					gAttempt = 0;			// 0 = first run of this ROM, 1 = rerun after the PSP locked up
 	std::string			gRomFile;
 	std::string			gRomName;
+	u32					gPass = 1;				// 1, or 2 for the second pass
 
 	// Measurements, updated once per N64 vertical interrupt on the emulator thread
 	enum EOutcome { OUTCOME_RUNNING, OUTCOME_OK, OUTCOME_FROZE, OUTCOME_NO_PICTURE };
@@ -191,7 +200,7 @@ namespace
 
 			if( gRun.Seconds >= gSettings.Seconds )
 			{
-				Stop( OUTCOME_OK );
+				Stop( gRun.SeenFrame ? OUTCOME_OK : OUTCOME_NO_PICTURE );
 				return;
 			}
 		}
@@ -240,6 +249,8 @@ namespace
 				if( dir[ dir.size() - 1 ] != '/' ) dir += '/';
 				gSettings.RomDirectories.push_back( dir );
 			}
+			else if( strcasecmp( key, "SecondPassSeconds" ) == 0 )			gSettings.SecondPassSeconds = atoi( value ) > 0 ? std::max( 10, atoi( value ) ) : 0;
+			else if( strcasecmp( key, "SecondPassButtonSeconds" ) == 0 )	gSettings.SecondPassButtonSeconds = std::max( 0, atoi( value ) );
 			else if( strcasecmp( key, "Only" ) == 0 && value[ 0 ] != '\0' )
 			{
 				gSettings.Only.push_back( value );
@@ -277,8 +288,33 @@ namespace
 		return it != text.end();
 	}
 
+	// File names of the ROMs the second pass runs (written when the first pass finishes)
+	std::vector< std::string >	gPass2List;
+
+	std::string Trim( const std::string & text )
+	{
+		const size_t b = text.find_first_not_of( " \t\r\n" );
+		const size_t e = text.find_last_not_of( " \t\r\n" );
+		return b == std::string::npos ? std::string() : text.substr( b, e - b + 1 );
+	}
+
+	void ReadPass2List()
+	{
+		gPass2List.clear();
+		FILE * fh = fopen( kPass2ListFile, "r" );
+		if( fh == nullptr ) return;
+		char line[ 512 ];
+		while( fgets( line, sizeof( line ), fh ) != nullptr )
+		{
+			const std::string name = Trim( line );
+			if( !name.empty() ) gPass2List.push_back( name );
+		}
+		fclose( fh );
+	}
+
 	bool IsSelected( const std::string & name )
 	{
+		if( gPass == 2 && std::find( gPass2List.begin(), gPass2List.end(), name ) == gPass2List.end() ) return false;
 		if( gSettings.Only.empty() ) return true;
 		for( const std::string & part : gSettings.Only )
 		{
@@ -320,6 +356,7 @@ namespace
 		std::string	RunningName;
 		u32			Attempt = 0;		// Attempt of the running ROM (or, if none was running, of the next one)
 		std::string	ClosingName;		// Set while a finished ROM is being closed
+		u32			Pass = 1;
 	};
 
 	SProgress ReadProgress()
@@ -341,6 +378,7 @@ namespace
 			else if( strncmp( line, "name=", 5 ) == 0 )		progress.RunningName = line + 5;
 			else if( strncmp( line, "attempt=", 8 ) == 0 )	progress.Attempt = atoi( line + 8 );
 			else if( strncmp( line, "closing=", 8 ) == 0 )	progress.ClosingName = line + 8;
+			else if( strncmp( line, "pass=", 5 ) == 0 )		progress.Pass = atoi( line + 5 ) == 2 ? 2 : 1;
 		}
 		fclose( fh );
 		return progress;
@@ -353,8 +391,8 @@ namespace
 		{
 			return;
 		}
-		fprintf( fh, "next=%u\nrunning=%d\nfile=%s\nname=%s\nattempt=%u\nclosing=%s\n",
-			(unsigned)next, (int)running, file.c_str(), name.c_str(), (unsigned)attempt, closing.c_str() );
+		fprintf( fh, "next=%u\nrunning=%d\nfile=%s\nname=%s\nattempt=%u\nclosing=%s\npass=%u\n",
+			(unsigned)next, (int)running, file.c_str(), name.c_str(), (unsigned)attempt, closing.c_str(), (unsigned)gPass );
 		fclose( fh );
 	}
 
@@ -388,13 +426,14 @@ namespace
 	{
 		char line[ 1024 ];
 		snprintf( line, sizeof( line ),
-			"# DaedalusX64 benchmark: %u ROMs, %u s each, Start/A pressed for the first %u s\n"
+			"# DaedalusX64 benchmark%s: %u ROMs, %u s each, Start/A pressed for the first %u s\n"
 			"# Figures are measured after the first %u s (or over the whole run if it stopped earlier).\n"
 			"# A ROM that locks up the PSP (or stops responding) is run once more on a fresh start: \"(retry)\" marks\n"
 			"# that second run, and \"x2\" means it locked up both times.\n"
 			"# fps = average frames per second; slowest / fastest = 10 second stretches; speed = N64 speed (100%% = full speed);\n"
 			"# idle = spare PSP time; cpu / gfx = share of PSP time. Details per second are in perf.txt.\n"
 			"# result             | fps  | slowest | fastest | speed | idle | cpu | gfx | time  | game | file\n",
+			gPass == 2 ? " (second pass: the ROMs that ran OK in benchmark_pass1.txt)" : gSettings.SecondPassSeconds > 0 ? " (first pass)" : "",
 			(unsigned)num_roms, (unsigned)gSettings.Seconds, (unsigned)gSettings.ButtonSeconds, (unsigned)gSettings.ButtonSeconds );
 		AppendResult( line );
 	}
@@ -488,6 +527,78 @@ namespace
 		pspDebugScreenPrintf( "%s", message );
 		sceKernelDelayThread( 10 * 1000 * 1000 );
 	}
+
+	// Every ROM has been run. With a second pass set up, keep the first pass's results, list
+	// the ROMs that ran OK and start again with just those; otherwise say so and quit.
+	void FinishPass( u32 num_roms )
+	{
+		char message[ 512 ];
+		if( gPass == 1 && gSettings.SecondPassSeconds > 0 )
+		{
+			std::vector< std::string > ok_roms;
+			FILE * fh = fopen( kResultsFile, "r" );
+			if( fh != nullptr )
+			{
+				char line[ 1024 ];
+				while( fgets( line, sizeof( line ), fh ) != nullptr )
+				{
+					if( line[ 0 ] == '#' ) continue;
+					const std::string text( line );
+					const size_t first = text.find( '|' );
+					const size_t last = text.rfind( '|' );
+					if( first == std::string::npos || last == first ) continue;
+					if( Trim( text.substr( 0, first ) ).compare( 0, 2, "OK" ) == 0 )
+					{
+						ok_roms.push_back( Trim( text.substr( last + 1 ) ) );
+					}
+				}
+				fclose( fh );
+			}
+
+			remove( kPass1ResultsFile );
+			rename( kResultsFile, kPass1ResultsFile );
+			remove( kPass1PerfFile );
+			rename( "perf.txt", kPass1PerfFile );
+
+			fh = fopen( kPass2ListFile, "w" );
+			if( fh != nullptr )
+			{
+				for( const std::string & name : ok_roms ) fprintf( fh, "%s\n", name.c_str() );
+				fclose( fh );
+			}
+
+			if( !ok_roms.empty() )
+			{
+				gPass = 2;
+				WriteProgress( 0, -1, "", "" );
+				snprintf( message, sizeof( message ),
+					"First pass finished: %u of %u ROMs ran OK.\n\n"
+					"Results are in benchmark_pass1.txt. Starting the second pass\n"
+					"(%u s each) with just those ROMs...", (unsigned)ok_roms.size(), (unsigned)num_roms, (unsigned)gSettings.SecondPassSeconds );
+				ShowMessage( message );
+				Relaunch();
+				return;
+			}
+			snprintf( message, sizeof( message ), "First pass finished, but no ROM ran OK.\n\nResults are in benchmark_pass1.txt." );
+		}
+		else if( gPass == 2 )
+		{
+			snprintf( message, sizeof( message ),
+				"Benchmark finished: both passes have been run.\n\n"
+				"First pass: benchmark_pass1.txt and perf_pass1.txt\n"
+				"Second pass: benchmark.txt and perf.txt\n\n"
+				"Delete benchmark_progress.txt to run it again." );
+		}
+		else
+		{
+			snprintf( message, sizeof( message ),
+				"Benchmark finished: all %u ROMs have been run.\n\n"
+				"Results are in benchmark.txt and perf.txt.\n"
+				"Delete benchmark_progress.txt to run it again.", (unsigned)num_roms );
+		}
+		ShowMessage( message );
+		sceKernelExitGame();
+	}
 }
 
 bool Benchmark_IsRequested()
@@ -517,8 +628,15 @@ void Benchmark_Run( const char * eboot_path )
 	gEbootPath = eboot_path ? eboot_path : "";
 	ReadSettings();
 
-	const std::vector< std::string > roms = FindRoms();
 	SProgress progress = ReadProgress();
+	gPass = progress.Pass;
+	if( gPass == 2 )
+	{
+		gSettings.Seconds = gSettings.SecondPassSeconds > 0 ? gSettings.SecondPassSeconds : gSettings.Seconds;
+		gSettings.ButtonSeconds = gSettings.SecondPassButtonSeconds;
+		ReadPass2List();
+	}
+	const std::vector< std::string > roms = FindRoms();
 
 	if( progress.Next == 0 && progress.Running < 0 )
 	{
@@ -556,13 +674,7 @@ void Benchmark_Run( const char * eboot_path )
 
 	if( progress.Next >= roms.size() )
 	{
-		char message[ 256 ];
-		snprintf( message, sizeof( message ),
-			"Benchmark finished: all %u ROMs have been run.\n\n"
-			"Results are in benchmark.txt and perf.txt.\n"
-			"Delete benchmark_progress.txt to run it again.", (unsigned)roms.size() );
-		ShowMessage( message );
-		sceKernelExitGame();
+		FinishPass( roms.size() );
 		return;
 	}
 
@@ -631,11 +743,5 @@ void Benchmark_Run( const char * eboot_path )
 
 	gRunning = false;
 	PerfStats_Flush();
-
-	char message[ 256 ];
-	snprintf( message, sizeof( message ),
-		"Benchmark finished: all %u ROMs have been run.\n\n"
-		"Results are in benchmark.txt and perf.txt.", (unsigned)roms.size() );
-	ShowMessage( message );
-	sceKernelExitGame();
+	FinishPass( roms.size() );
 }
