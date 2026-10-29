@@ -27,12 +27,12 @@ On a PSP 3000, current DaedalusX64 was measured against the old 1.1.8 release wi
 
 `roms.ini` entries can carry `Compatibility=Good`, `Partial` or `Broken`, shown in the ROM list as a coloured square before the game's name and as a "Compat:" line in the info panel:
 
-- Green (`Good`): playable or better.
-- Yellow (`Partial`): runs, but too slow or glitchy to really play.
-- Red (`Broken`): crashes or hangs.
+- Green (`Good`): runs at 80% of N64 speed or better.
+- Yellow (`Partial`): runs, but below 80% of N64 speed.
+- Red (`Broken`): doesn't start, or freezes, crashes or locks up.
 - No square: not rated yet.
 
-350 games are rated, from the Daedalus PSP compatibility list, the upstream wiki and testing on real hardware.
+933 entries are rated. 915 of them come from benchmarking every ROM of a full N64 collection on a PSP 3000 with this build: a 30 second run of each to see what starts, then a 90 second run of the ones that did, measuring N64 speed over the last 60 seconds (Start and A are pressed during the first 30 to get past title screens). The rest keep their rating from the Daedalus PSP compatibility list and the upstream wiki. A short automatic run can't tell whether a game is playable all the way through, so reports from real play are welcome.
 
 `roms.ini` can also turn features off for games known to break with them: `PatchesEnabled=no`, `DynarecLoopOptimisation=no` and `MemoryAccessOptimisation=no` force those off for that game, whatever the player's settings. They are used for:
 
