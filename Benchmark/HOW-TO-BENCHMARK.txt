@@ -1,0 +1,34 @@
+Benchmark mode
+==============
+
+To run every ROM automatically and log how each one runs:
+
+1. Copy the whole DaedalusX64 folder a second time to PSP/GAME and name the copy
+   DaedalusX64Bench (keep your normal DaedalusX64 folder as it is).
+2. Put this benchmark.ini into PSP/GAME/DaedalusX64Bench.
+3. Check the Roms= lines in benchmark.ini point to where your ROMs are.
+4. Plug in the charger and start the second DaedalusX64 from the XMB.
+
+It runs in two passes, by itself:
+
+- First pass: every ROM for 30 seconds, to see which ones load.
+  A ROM counts as working ("OK") if it shows a picture and keeps running for
+  the 30 seconds without crashing, freezing or locking up.
+- Second pass: only the ROMs that were OK, for 90 seconds each, for proper
+  speed figures.
+
+Files:
+- benchmark_pass1.txt / perf_pass1.txt: first pass results
+- benchmark_pass2_list.txt: the ROMs that go into the second pass
+- benchmark.txt / perf.txt: second pass results
+
+With about 1200 ROMs expect roughly half a day for the first pass and most of
+a day for the second. If the PSP locks up or switches off, start it again: it
+runs that ROM once more, then moves on. You can stop it any time and carry on
+later.
+
+To start again from the beginning, delete benchmark_progress.txt,
+benchmark.txt, perf.txt and the *_pass1.txt / pass2_list files.
+
+Do not put benchmark.ini in your normal DaedalusX64 folder, or it will
+benchmark instead of showing the menu.
