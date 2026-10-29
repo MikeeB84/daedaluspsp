@@ -5,6 +5,11 @@ on:
   pull_request:
   repository_dispatch:
     types: [run_build]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish the PSP build as a release with this tag (e.g. psp-2026.10.29)'
+        required: false
 
 jobs:
   build-psp:
@@ -40,22 +45,26 @@ jobs:
         name: DaedalusX64-PSP
         path: DaedalusX64
 
-    # A tag like psp-2026.10.29 publishes the build as a GitHub release
+    # Running the workflow by hand with a release_tag publishes the build as a GitHub release
     - name: Package release
-      if: startsWith(github.ref, 'refs/tags/psp-')
+      if: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag != null }}
+      env:
+        TAG: ${{ github.event.inputs.release_tag }}
       run: |
         apk add zip
         mkdir -p release
         cp -r DaedalusX64 Benchmark README.md release/
-        cd release && zip -qr ../DaedalusX64-PSP-${GITHUB_REF_NAME}.zip .
+        cd release && zip -qr "../DaedalusX64-PSP-$TAG.zip" .
 
     - name: Publish release
-      if: startsWith(github.ref, 'refs/tags/psp-')
+      if: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag != null }}
       uses: softprops/action-gh-release@v2
       with:
-        name: DaedalusX64 PSP (${{ github.ref_name }})
+        tag_name: ${{ github.event.inputs.release_tag }}
+        target_commitish: ${{ github.sha }}
+        name: DaedalusX64 PSP (${{ github.event.inputs.release_tag }})
         body_path: .github/psp-release-notes.md
-        files: DaedalusX64-PSP-${{ github.ref_name }}.zip
+        files: DaedalusX64-PSP-${{ github.event.inputs.release_tag }}.zip
 
     - name: Extract tag name
       if: startsWith(github.ref, 'refs/tags/')
